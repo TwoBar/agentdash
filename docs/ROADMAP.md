@@ -8,12 +8,14 @@ M0–M6 produce the Codex-first, single-user, local-first MVP. Human resolution 
 
 See [ADR 0001](decisions/0001-mvp-sequencing.md) for how this reconciles the two draft specifications. [The backlog](BACKLOG.md) maps each milestone to implementable issues.
 
+The vision review selected **Operations desk** as the default layout. M3 includes approval buttons on notification cards and Approve all per segment, with optional member exclusion and a separate result for each exact action. See [ADR 0003](decisions/0003-operations-desk-and-group-approvals.md). Agent-curated recommendation bundles remain M7.
+
 | Milestone | Deliverable | Exit evidence | Depends on |
 |---|---|---|---|
 | M0 — Feasibility and decisions | Native approval proof, event/coexistence report, runtime and threat-model decisions | Real supported approval stays pending until resolved; approve and deny behavior captured; capability limits and architecture recorded | None |
 | M1 — Local foundation | Runtime scaffold, neutral contracts, SQLite/audit, authenticated local service, project tree | Clean setup works; graph survives restart; boundary and migration checks pass; local state stays outside Git | M0 |
 | M2 — Registered Codex sessions | Connector lifecycle, persisted activity, compiled context, scoped MCP, registered child execution | Root and child sessions have durable bindings; policy rejects invalid spawns; reconnect and identity tests pass | M1 |
-| M3 — Human governance | Bound approval state machine, human inbox, recovery, session inspector | Exact-action approve/deny and negative cases pass; inspector remains anchored on the pending event | M2 |
+| M3 — Human governance | Bound approval state machine, inline/grouped human approvals, recovery, session inspector | Exact-action approve/deny and group-member validation pass; inspector remains anchored on the pending event | M2 |
 | M4 — Conversation routing | Automatic turn observations, parent inbox, bounded review/reply scheduling | A child question/blocker reaches its parent without an MCP call; no classifier-driven authorization or task completion | M3 |
 | M5 — Personas, artifacts, GitHub | Versioned personas/skills, artifact freshness protocols, optional governed repo/issue operations | Missing/stale inputs block work; GitHub writes require an exact approved proposal; unauthorized mode works locally | M4 |
 | M6 — MVP release readiness | Acceptance suite, security/recovery review, packaging and onboarding | All eight PRD acceptance criteria demonstrated; limitations documented; no unresolved release-blocking security defect | M5 |

@@ -442,14 +442,17 @@
         "AGCP-013"
       ],
       "outcome": "Let a human review and resolve a native pending action while Codex remains paused.",
-      "scope": "Surface pending approvals with what/why/target/impact/risk/expiry/evidence and current owner. Dispatch a verified one-shot response to the original pending request and reconcile native resolution outcomes.",
+      "scope": "Surface pending approvals with what/why/target/impact/risk/expiry/evidence and current owner. Dispatch a verified one-shot response to the original pending request and reconcile native resolution outcomes. Use the accepted Operations desk direction with direct notification-card decisions and manual per-segment human group approval; see ADR 0003.",
       "acceptance": [
         "A real native approval appears as pending and its original action remains paused until an explicit valid decision.",
         "Approve and deny resolve only that original action, with durable human identity and policy/authority references.",
         "Stale cards, double-clicks, disconnected sessions and insufficient capability cannot approve; UI distinguishes decision recorded from execution observed.",
-        "Session-wide permission and persistent policy amendments are unavailable in the initial one-action flow."
+        "Session-wide permission and persistent policy amendments are unavailable in the initial one-action flow.",
+        "Notification cards expose Approve and Deny directly with action, agent, target, impact and risk visible; Inspect is optional for the decision.",
+        "Each approval segment has counted Approve all, with member exclusion changing it to Approve selected. The gesture freezes displayed member IDs/digests; new arrivals are excluded.",
+        "Every group member passes exact-action validation and receives its own audit/outcome. Expired, modified, disconnected or resolved members cannot be approved; partial outcomes are explicit and questions/blockers are excluded."
       ],
-      "verification": "Demonstrate native approve/deny flows using harmless sentinel actions and exercise stale UI, duplicate submit and two simultaneous pending sessions.",
+      "verification": "Demonstrate native approve/deny flows using harmless sentinel actions and exercise stale UI, duplicate submit and two simultaneous pending sessions. Verify inline decisions without inspector navigation, whole-group approval, member exclusion, new arrivals, mixed-validity members and independent outcomes; questions and context blockers remain unresolved.",
       "references": "PRD §§7.3, 8, 11.3–4; technical spec §§6–7."
     },
     {
@@ -733,7 +736,7 @@
         "AGCP-026"
       ],
       "outcome": "Reduce repetitive human review without hiding the atomic actions being authorized.",
-      "scope": "Create recommendation-only bundles, member inspection/removal and member-specific resolution. Keep each approval node, digest, expiry and outcome permanent and independently auditable.",
+      "scope": "Build on the MVP manual human grouping from AGCP-014 / ADR 0003. Create recommendation-only bundles, member inspection/removal and member-specific resolution. Keep each approval node, digest, expiry and outcome permanent and independently auditable.",
       "acceptance": [
         "A bundle never replaces or merges atomic approval identity or authority checks.",
         "A human can inspect/remove individual members before deciding.",

@@ -12,6 +12,7 @@ Agentdash is the working name for **Agent Governance Control Plane (AGCP)**: a p
 - [Issue backlog and dependencies](docs/BACKLOG.md)
 - [Readiness review and open decisions](docs/READINESS.md)
 - [MVP scope decision](docs/decisions/0001-mvp-sequencing.md)
+- [Accepted workspace and approval UX](docs/decisions/0003-operations-desk-and-group-approvals.md)
 - [Runtime decision to resolve](docs/decisions/0002-runtime-and-connector.md)
 - [Contributing](CONTRIBUTING.md)
 

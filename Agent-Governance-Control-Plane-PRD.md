@@ -2,7 +2,7 @@
 
 ## Product requirements document
 
-**Status:** Draft v0.1  
+**Status:** Draft v0.2 — incorporates the 2026-11-13 workspace vision review  
 **Scope:** A personal, local-first development control plane with Codex as the first supported execution connector.
 
 ## 1. Product summary
@@ -112,6 +112,8 @@ Personas follow declared context protocols. For example, a codebase analyst publ
 
 - An approval node contains: action description, immutable action digest, requested capability, target/resource, impact, reversibility, risk, source session, parent task, expiry, decision options, evidence links, and recommendation.
 - Default card exposes what, why, impact, risk, recommended decision, and current owner.
+- The Operations desk is the default workspace direction. Approval notifications include direct Approve and Deny controls plus Inspect for deeper context.
+- Each approval segment has Approve all with a member count and optional individual exclusion. The human gesture applies only to the displayed selected pending nodes, preserves exact-action validation and separate outcomes, and excludes questions and context blockers.
 - An expandable decision path shows every parent judgment, policy check, authority limit, escalation reason, and evidence link.
 - Atomic nodes are permanent. A bundle is a recommendation over member nodes, not a replacement; the human can inspect or remove members.
 - Policies define human-only categories, delegable categories, maximum delegation depth, expiry, and fail-closed behavior.
@@ -154,6 +156,6 @@ Personas follow declared context protocols. For example, a codebase analyst publ
 
 ## 12. Roadmap
 
-**MVP:** local AGCP, Codex connector, task tree, persona templates, artifact registry, native approval bridge, human approvals, basic GitHub integration.  
+**MVP:** local AGCP, Codex connector, task tree, persona templates, artifact registry, native approval bridge, inline and manually grouped human approvals, basic GitHub integration.  
 **Next:** delegated parent-agent approvals, recommendation bundles, configurable policies, richer GitHub actions, project export/import.  
 **Later:** additional harness adapters, harness-selection routing, shared workspaces, enterprise controls, policy packs, and analytics.

@@ -2,7 +2,7 @@
 
 ## Technical specification — Codex-first MVP
 
-**Status:** Draft v0.1  
+**Status:** Draft v0.2 — incorporates the 2026-11-13 workspace vision review  
 **Architecture principle:** AGCP is a local-first control plane. Codex is the first execution harness. A connector adapter boundary permits future harness support without changing governance semantics.
 
 ## 1. System boundaries
@@ -175,6 +175,8 @@ AGCP renders an application-owned session inspector from its persisted event led
 
 The pending decision remains visible while inspecting context. A future native-Codex deep link may be additive, but AGCP's inspector is the review surface required for governance.
 
+The Operations desk inbox also permits Approve and Deny directly on notification cards. Each approval segment has a counted Approve all action with member exclusion. A group gesture snapshots the displayed selected approval IDs and action digests; every member passes the normal one-shot decision checks and receives its own outcome/audit record. New arrivals are excluded, invalid members fail closed, and partial delivery remains explicit. This is not an atomic transaction across native executions. Questions and context blockers are not approval-group members. Manual human grouping is MVP; agent-curated recommendation bundles remain post-MVP. See [ADR 0003](docs/decisions/0003-operations-desk-and-group-approvals.md).
+
 ## 10. Artifact registry and context protocols
 
 Artifacts are AGCP-native records with optional content or external references. A logical key can have many versions; resolution returns the latest approved, non-stale version that the caller may read.
@@ -220,6 +222,7 @@ Export produces a portable project-governance archive with redaction options. So
 
 - Receive one supported Codex native approval event.
 - Render a pending approval card and hold/resume/reject its original session.
+- Support direct card decisions and counted per-segment human group approval with member exclusion and independent validation/outcomes.
 - Bind and audit a human resolution with fail-closed timeout.
 
 ### Slice 4 — Personas, artifacts, GitHub
