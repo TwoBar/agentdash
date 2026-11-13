@@ -54,6 +54,8 @@ The loopback service uses an HttpOnly SameSite cookie, exact Host/Origin checks 
 
 GitHub currently supports repository references; credentialed repository/issue writes, OS-backed persistent keys, encrypted content archives, supported-version expansion, prolonged recovery tests and desktop packaging remain planned. The experimental Node SQLite driver and runtime/embedded SQLite patch currency need release review. No open-source license has been selected; private package metadata is UNLICENSED and distribution is blocked on the owner's choice.
 
+The planned GitHub workflow is a connection in **profile settings**, reused across projects. Each project creates its own repository or links an existing one when connected; local-only setup also works. Profile connection and repository creation are **not implemented yet**. See [ADR 0004](docs/decisions/0004-profile-github-and-project-repositories.md).
+
 ## Verify
 
 ```sh

@@ -21,6 +21,8 @@ The vision review selected **Operations desk** as the default layout. M3 include
 | M6 — MVP release readiness | Acceptance suite, security/recovery review, packaging and onboarding | All eight PRD acceptance criteria demonstrated; limitations documented; no unresolved release-blocking security defect | M5 |
 | M7 — Delegation and portability | Scoped parent decision authority, recommendation bundles, redacted export/import | Delegation cannot bypass human-only policy; atomic nodes survive bundles; export excludes credentials and source by default | M6 |
 
+M5 connects GitHub once at profile level, then creates or links a separate repository per project when connected. Account connection and repository binding are separate; local-only operation remains supported. This workflow is planned under AGCP-022/023, not implemented by the current manual reference field. See [ADR 0004](decisions/0004-profile-github-and-project-repositories.md).
+
 ## First work queue
 
 1. **AGCP-001:** prove native command approval pause/accept/deny and characterize disconnect behavior in an isolated scratch workspace.

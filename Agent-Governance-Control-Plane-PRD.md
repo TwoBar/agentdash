@@ -2,7 +2,7 @@
 
 ## Product requirements document
 
-**Status:** Draft v0.2 — incorporates the 2026-11-13 workspace vision review  
+**Status:** Draft v0.3 — incorporates the 2026-11-13 workspace and GitHub connection reviews  
 **Scope:** A personal, local-first development control plane with Codex as the first supported execution connector.
 
 ## 1. Product summary
@@ -50,10 +50,11 @@ An individual developer/product builder using multiple coding-agent sessions on 
 
 ### 7.1 Create a project
 
-1. User creates a project and optionally selects a linked GitHub account/organization, repository name, and visibility.
-2. AGCP creates or links the repository, creates a root project node, and starts the project orchestrator persona in Codex.
-3. User chats with the orchestrator to establish vision, constraints, and roadmap.
-4. The orchestrator proposes a work tree and requests specialist agents as needed.
+1. User optionally connects GitHub once in profile settings. That account connection is reusable across projects; repository bindings belong to individual projects.
+2. User creates a project. If GitHub is connected, project setup offers creation of a repository for that project, with the permitted owner/organization, name, and visibility reviewed before the governed write. Linking an existing permitted repository is also supported. Without GitHub, the project remains local.
+3. AGCP creates or links the approved repository when requested, creates a root project node, and starts the project orchestrator persona in Codex.
+4. User chats with the orchestrator to establish vision, constraints, and roadmap.
+5. The orchestrator proposes a work tree and requests specialist agents as needed.
 
 ### 7.2 Delegate work
 
@@ -121,7 +122,10 @@ Personas follow declared context protocols. For example, a codebase analyst publ
 
 ### GitHub integration
 
+- Connect/disconnect GitHub at profile level; project creation reuses the authorized connection without asking for credentials per project.
+- Each project owns its repository binding. A profile connection is not a global repository selection or blanket approval for agent writes.
 - Create or link repositories in MVP if GitHub authorization is configured.
+- Local Git availability and GitHub account authorization are separate; local-only projects work without a GitHub connection. See [ADR 0004](docs/decisions/0004-profile-github-and-project-repositories.md).
 - Surface and govern selected GitHub side effects: repository creation, issue creation, pull-request creation, merge, collaborator or permissions changes, and releases.
 - Link project tree nodes and artifacts to GitHub issues, PRs, commits, and files.
 
