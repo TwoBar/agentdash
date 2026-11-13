@@ -2,7 +2,7 @@
 
 ## Technical specification — Codex-first MVP
 
-**Status:** Draft v0.2 — incorporates the 2026-11-13 workspace vision review  
+**Status:** Draft v0.3 — incorporates the 2026-11-13 workspace and GitHub connection reviews  
 **Architecture principle:** AGCP is a local-first control plane. Codex is the first execution harness. A connector adapter boundary permits future harness support without changing governance semantics.
 
 ## 1. System boundaries
@@ -44,7 +44,8 @@ Project
 
 | Entity | Key fields |
 |---|---|
-| Project | id, name, workspace, GitHub binding, policy set, root_task_id |
+| Profile GitHub connection | id, authenticated account identity, permitted owners/capabilities, secure credential reference, authorization status |
+| Project | id, name, workspace, profile connection reference, repository identity/binding, policy set, root_task_id |
 | Task | id, project_id, parent_task_id, objective, state, persona_version_id, session_binding, authority_grant_id |
 | Agent session | id, task_id, harness, external_session_id, connector_id, state, capability_token_ref |
 | Persona version | id, persona_id, instructions, mandate, authority template, context protocol, skills, tool/data constraints |
@@ -198,6 +199,12 @@ side effect: GitHub issue creation only after required-input validation and gove
 - Sensitive prompt/content retention is configurable per project and default-minimal.
 - The event ledger is append-only at the application layer, hash-linked, and exportable for audit.
 - Repository access uses least-privilege GitHub tokens/app installations and separates read, write, administration, and release scopes.
+
+### Profile connection and project repository boundary
+
+GitHub authorization belongs to the local operator profile and can be reused by multiple projects. Each project stores its own repository identity and connection reference; credentials stay in secure storage and are never copied into project records, source, session context or agent capabilities. These are target contracts; the experimental build currently stores only a manual repository reference.
+
+When a connected profile creates a project, setup offers repository creation for that project or linking an existing permitted repository. Creation binds the reviewed account/owner/name/visibility to an exact human-approved proposal. A profile connection alone cannot grant action approval or access to every authorized repository. Validate current connection identity, target permissions and proposal bindings before each external write; revocation or account mismatch fails closed while local governance stays usable. Local Git workspace support is independent of GitHub authorization. Authentication transport remains the open decision listed below. See [ADR 0004](docs/decisions/0004-profile-github-and-project-repositories.md).
 
 ## 12. Local persistence and portability
 
