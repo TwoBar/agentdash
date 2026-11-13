@@ -1,0 +1,50 @@
+# OS and editors
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+.codex/
+
+# Local governance state and session data
+.agentdash/
+.agcp/
+data/
+logs/
+transcripts/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Build, dependency, and test output (lockfiles stay tracked)
+node_modules/
+.pnpm-store/
+dist/
+build/
+out/
+coverage/
+.cache/
+.turbo/
+target/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+playwright-report/
+test-results/

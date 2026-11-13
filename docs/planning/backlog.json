@@ -1,0 +1,768 @@
+{
+  "schema_version": 1,
+  "baseline_date": "2026-11-13",
+  "repository": "TwoBar/agentdash",
+  "note": "Initial planning baseline; GitHub is canonical for ongoing issue status.",
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "M0 — Feasibility and decisions",
+      "description": "Prove native Codex approval behavior and event coverage; record runtime, process, trust, and licensing decisions before application scaffolding."
+    },
+    {
+      "id": "M1",
+      "title": "M1 — Local foundation",
+      "description": "Deliver the selected runtime scaffold, connector-neutral contracts, SQLite audit persistence, authenticated local service, and persistent project/task UI."
+    },
+    {
+      "id": "M2",
+      "title": "M2 — Registered Codex sessions",
+      "description": "Run durable registered root/child sessions with scoped context, MCP identity, event ingestion, and workspace isolation."
+    },
+    {
+      "id": "M3",
+      "title": "M3 — Human governance",
+      "description": "Human decisions resolve only the exact native pending action; fail closed across errors and recovery; inspect activity, changes, context, and decision ancestry."
+    },
+    {
+      "id": "M4",
+      "title": "M4 — Conversation routing",
+      "description": "Automatically route terminal child observations to parent inboxes and support bounded parent/human replies without granting authority through classification."
+    },
+    {
+      "id": "M5",
+      "title": "M5 — Personas, artifacts, GitHub",
+      "description": "Deliver versioned personas/skills, logical artifact freshness and context protocols, and optional governed GitHub repository/issue workflows."
+    },
+    {
+      "id": "M6",
+      "title": "M6 — MVP release readiness",
+      "description": "Demonstrate all eight PRD acceptance criteria against a supported native Codex version and ship documented local onboarding with security/recovery evidence."
+    },
+    {
+      "id": "M7",
+      "title": "M7 — Delegation and portability",
+      "description": "Post-MVP: add bounded delegated authority, transparent recommendation bundles, and redacted portable project archives."
+    }
+  ],
+  "labels": [
+    {
+      "name": "priority:P0",
+      "color": "B60205",
+      "description": "Critical path or security invariant; complete before dependent work."
+    },
+    {
+      "name": "priority:P1",
+      "color": "D93F0B",
+      "description": "Required for the scoped milestone."
+    },
+    {
+      "name": "priority:P2",
+      "color": "FBCA04",
+      "description": "Post-MVP enhancement."
+    },
+    {
+      "name": "kind:spike",
+      "color": "D4C5F9",
+      "description": "Research with a concrete evidence report."
+    },
+    {
+      "name": "kind:feature",
+      "color": "0E8A16",
+      "description": "User-visible or domain behavior."
+    },
+    {
+      "name": "kind:chore",
+      "color": "C5DEF5",
+      "description": "Repository, infrastructure, or release work."
+    },
+    {
+      "name": "kind:bug",
+      "color": "D73A4A",
+      "description": "Unexpected behavior requiring a fix."
+    },
+    {
+      "name": "status:ready",
+      "color": "0E8A16",
+      "description": "Dependencies satisfied at the planning baseline."
+    },
+    {
+      "name": "status:blocked",
+      "color": "B60205",
+      "description": "An explicit dependency or decision remains open."
+    },
+    {
+      "name": "status:backlog",
+      "color": "EDEDED",
+      "description": "Scheduled after the MVP."
+    },
+    {
+      "name": "scope:mvp",
+      "color": "1D76DB",
+      "description": "Part of the initial MVP delivery."
+    },
+    {
+      "name": "scope:next",
+      "color": "5319E7",
+      "description": "Planned follow-up after the MVP."
+    },
+    {
+      "name": "area:architecture",
+      "color": "BFDADC",
+      "description": "Runtime, domain contracts, process and trust boundaries."
+    },
+    {
+      "name": "area:platform",
+      "color": "BFDADC",
+      "description": "Local service, persistence, configuration and packaging."
+    },
+    {
+      "name": "area:codex",
+      "color": "BFDADC",
+      "description": "Codex protocol, sessions and connector capability."
+    },
+    {
+      "name": "area:governance",
+      "color": "BFDADC",
+      "description": "Approval binding, policy, identity and audit."
+    },
+    {
+      "name": "area:ui",
+      "color": "BFDADC",
+      "description": "Project workspace, inbox and inspection views."
+    },
+    {
+      "name": "area:orchestration",
+      "color": "BFDADC",
+      "description": "Agent lifecycle, parent routing, MCP and scheduling."
+    },
+    {
+      "name": "area:artifacts",
+      "color": "BFDADC",
+      "description": "Persona, skill and artifact context protocols."
+    },
+    {
+      "name": "area:github",
+      "color": "BFDADC",
+      "description": "Optional engineering system-of-record integration."
+    },
+    {
+      "name": "area:quality",
+      "color": "BFDADC",
+      "description": "Acceptance verification, CI and release evidence."
+    }
+  ],
+  "issues": [
+    {
+      "id": "AGCP-001",
+      "title": "Prove native Codex approval pause, accept, deny, and failure behavior",
+      "milestone": "M0",
+      "priority": "P0",
+      "kind": "spike",
+      "area": "codex",
+      "dependencies": [],
+      "outcome": "Establish whether the central exact-action governance promise is enforceable through a supported Codex interface.",
+      "scope": "Evaluate an AGCP-owned app-server process in a disposable workspace. Record CLI version, generated schema, initialization, approval configuration, native request/response identity, payload completeness, and timeout/disconnect observations. Do not build the product UI or rely on simulated approvals as proof.",
+      "acceptance": [
+        "A supported native command approval is received and its side effect is absent while the response is withheld; capture a bounded observation interval.",
+        "Separate accept and deny cases show that only the selected original pending command can execute; demonstrate two concurrent requests cannot be cross-resolved.",
+        "Inventory command, file-change, network/permission and MCP approval coverage, classifying each as proven, untested, or unavailable. Flag insufficient immutable action detail.",
+        "Record timeout, client/process disconnect and restart behavior, exact one-action native decisions, and a go/no-go conclusion with sanitized evidence."
+      ],
+      "verification": "Use harmless sentinel files in a scratch workspace; record before/pending/after state, native correlation identifiers, and CLI version. Keep raw sessions and credentials out of Git. If a model-backed run is unavailable, report the missing evidence and leave the issue open.",
+      "references": "PRD §§7.3, 9, 11.3–4; technical spec §§6, 11, 14; ADR 0002."
+    },
+    {
+      "id": "AGCP-002",
+      "title": "Map session events and direct Codex UI coexistence limits",
+      "milestone": "M0",
+      "priority": "P0",
+      "kind": "spike",
+      "area": "codex",
+      "dependencies": [],
+      "outcome": "Define what the session inspector and automatic parent routing can observe, including direct/native Codex interaction.",
+      "scope": "Create a capability matrix for AGCP-owned sessions: message deltas, final messages, tools/results, diffs, terminal turns, failures, interruptions, reconnect and history retrieval. Investigate supported shared/native UI interaction without desktop data scraping.",
+      "acceptance": [
+        "Document event ordering, stable identifiers, duplicate delivery, replay/history coverage, and transcript gaps for the tested CLI version.",
+        "Demonstrate a terminal child question can be observed without a child MCP report.",
+        "Prove or explicitly mark unsupported simultaneous/direct native UI use; specify approval ownership and conflict behavior if it is supported.",
+        "Publish a connector/inspector capability matrix and recommended MVP boundary with sanitized evidence."
+      ],
+      "verification": "Capture synthetic turns and interruptions, compare the supported protocol history with received events, and document missing coverage. This is a research report, not a promise of desktop attachment support.",
+      "references": "PRD §§3, 7.4–5, 11.7–8; technical spec §§8–9, 14; ADR 0002."
+    },
+    {
+      "id": "AGCP-003",
+      "title": "Select runtime, trust boundaries, workspace strategy, and licensing direction",
+      "milestone": "M0",
+      "priority": "P0",
+      "kind": "chore",
+      "area": "architecture",
+      "dependencies": [
+        "AGCP-001",
+        "AGCP-002"
+      ],
+      "outcome": "Finish the architectural decisions needed to build a secure local application without speculative scaffolding.",
+      "scope": "Complete ADR 0002 using both spikes. Compare local web UI/service, Electron and Tauri; select runtime, package manager, SQLite/migrations, IPC, process ownership and initial OS support. Define threat model, key storage, retention and workspace strategy. Record license selection or an explicit owned deferral.",
+      "acceptance": [
+        "ADR 0002 is accepted with alternatives, consequences, version choices, repository layout, and linked spike evidence.",
+        "Threat model covers UI/service authentication, origin/CSRF if relevant, MCP capability scope, same-user processes, host administrator limits, key loss, and logs.",
+        "Define exact action canonicalization/signature boundary, one-shot delivery and restart recovery; distinguish AGCP verification from Codex native response handling.",
+        "Record isolated workspace/worktree ownership, supported session mode, and licensing/distribution decision or a release-blocking follow-up."
+      ],
+      "verification": "Review all technical-spec open decisions. Every unresolved release-critical item has an owner and a blocking issue; the chosen architecture can support the proven native approval flow.",
+      "references": "Technical spec §§2, 6, 11–12, 14; docs/READINESS.md; ADRs 0001–0002."
+    },
+    {
+      "id": "AGCP-004",
+      "title": "Scaffold the chosen application workspace and runtime CI",
+      "milestone": "M1",
+      "priority": "P0",
+      "kind": "chore",
+      "area": "platform",
+      "dependencies": [
+        "AGCP-003"
+      ],
+      "outcome": "Make the accepted runtime architecture runnable and verifiable from a clean checkout.",
+      "scope": "Create actual application/service/domain/connector packages as selected in ADR 0002, a tracked lockfile, configuration example, and CI build/type/lint checks. Preserve the existing documentation check.",
+      "acceptance": [
+        "Documented install, development and build commands work on the initial supported OS.",
+        "Package boundaries keep domain code independent of Codex-specific wire types and UI rendering.",
+        "CI runs the real build and focused automated checks using pinned runtime/dependency choices.",
+        "Application state, credentials and generated output stay outside tracked source; sample configuration contains placeholders only."
+      ],
+      "verification": "Run setup from a clean checkout or equivalent disposable environment, execute documented build/check commands, and confirm no local state appears in git status.",
+      "references": "Technical spec §§1–2, 11–12; ADR 0002."
+    },
+    {
+      "id": "AGCP-005",
+      "title": "Define neutral entities, events, and task/session state transitions",
+      "milestone": "M1",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "architecture",
+      "dependencies": [
+        "AGCP-004"
+      ],
+      "outcome": "Give each subsystem stable identifiers and explicit legal transitions before persistence and connector implementation.",
+      "scope": "Define project/task/session/persona/artifact/approval/decision/authority/message/observation/audit contracts. Separate task acceptance from session turn completion and define event schema versions and source provenance.",
+      "acceptance": [
+        "Contracts cover the technical-spec entities with project scope, stable IDs and versioned events.",
+        "Legal state transitions are documented; invalid transitions and cross-project identifiers are rejected.",
+        "Task completed/accepted state is distinct from model turn completion and observation labels.",
+        "Codex wire payloads do not enter public domain contracts; unknown connector events have a defined handling path."
+      ],
+      "verification": "Use transition-table and serialization checks for invalid states, missing identity, duplicate source events, and cross-project boundaries.",
+      "references": "Technical spec §§2–3, 8; PRD §8 lifecycle; ADR 0001."
+    },
+    {
+      "id": "AGCP-006",
+      "title": "Implement SQLite migrations, durable graph state, and hash-linked audit events",
+      "milestone": "M1",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "platform",
+      "dependencies": [
+        "AGCP-005"
+      ],
+      "outcome": "Persist canonical local governance records and their event history with explicit integrity limits.",
+      "scope": "Create migrations, transactions, event IDs, source-event idempotency and audit hash linkage. Keep raw content optional and separate from metadata; implement the integrity/checkpoint strategy chosen in M0.",
+      "acceptance": [
+        "A fresh database and supported migration path reconstruct project/task state after restart.",
+        "State changes and corresponding audit writes commit atomically; duplicate source events do not duplicate effects.",
+        "Audit verification detects modified/missing/reordered stored events within the stated threat model.",
+        "Storage paths remain outside repositories, with documented permissions, retention boundaries and backup/recovery behavior."
+      ],
+      "verification": "Exercise migration, rollback on write failure, duplicate delivery, restart reconstruction and deliberate audit-chain corruption using synthetic fixtures.",
+      "references": "Technical spec §§2–3, 11–12; ADR 0002."
+    },
+    {
+      "id": "AGCP-007",
+      "title": "Build authenticated local project/task APIs and scoped identity",
+      "milestone": "M1",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "governance",
+      "dependencies": [
+        "AGCP-006"
+      ],
+      "outcome": "Expose local project/task operations without trusting caller-supplied project or authority claims.",
+      "scope": "Implement the local service boundary selected in M0, project and task CRUD/lifecycle operations, authenticated UI access, session-capability issuance/revocation primitives and minimal diagnostics.",
+      "acceptance": [
+        "The service is local-only by default and rejects unauthenticated requests.",
+        "Project/task reads and writes enforce scope and legal parentage, preventing cycles and cross-project references.",
+        "Capability credentials are scoped, short-lived and revocable; ordinary logs contain no secret material.",
+        "Apply origin/CSRF and filesystem/process access controls required by the selected transport."
+      ],
+      "verification": "Exercise invalid/revoked credentials, cross-project reads/writes, cyclic graphs, foreign parents and local service restart. Verify allowed operations still work.",
+      "references": "Technical spec §§3, 5, 11; PRD §9."
+    },
+    {
+      "id": "AGCP-008",
+      "title": "Create local project workspace UI and persistent task tree",
+      "milestone": "M1",
+      "priority": "P1",
+      "kind": "feature",
+      "area": "ui",
+      "dependencies": [
+        "AGCP-007"
+      ],
+      "outcome": "Let the operator create a local project and inspect objectives, task ownership and actionable state.",
+      "scope": "Build a basic project view, manual child task creation, state/status presentation and task detail/chat shell. Clearly show unavailable connector/chat capabilities before M2.",
+      "acceptance": [
+        "A user creates a project and root task, adds valid child tasks, and sees the tree after app restart.",
+        "Task details expose objective, owner/persona references and actionable versus idle/failed states.",
+        "Empty, loading and error states explain the next available action without invented live status.",
+        "Keyboard navigation and focus work for project selection and task tree/detail interaction."
+      ],
+      "verification": "Run a UI flow covering creation, invalid child handling, navigation and restart persistence. Add focused interaction checks around the tree state.",
+      "references": "PRD §§7.1, 8, 11.1; technical spec §13 slice 1."
+    },
+    {
+      "id": "AGCP-009",
+      "title": "Implement owned Codex connector lifecycle and capability negotiation",
+      "milestone": "M2",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "codex",
+      "dependencies": [
+        "AGCP-007"
+      ],
+      "outcome": "Start, resume, message, interrupt and terminate registered Codex sessions through the proven adapter.",
+      "scope": "Implement the supported versioned app-server adapter and session bindings from M0. Perform protocol initialization, capability detection, lifecycle mapping and process shutdown. Expose unknown/unsupported capabilities explicitly.",
+      "acceptance": [
+        "A project task starts a root session and records its original native session binding.",
+        "Supported message/interrupt/resume/terminate operations map to valid domain transitions.",
+        "Disconnect, unsupported protocol/version and process failure are visible and never silently grant pending approvals.",
+        "Adapter tests use pinned sanitized protocol fixtures; a documented live smoke run verifies supported lifecycle behavior."
+      ],
+      "verification": "Exercise lifecycle and error paths with fixtures plus one native supported-version session. Do not claim native proof from mocked responses alone.",
+      "references": "Technical spec §§4, 6; PRD §§7.1, 11.1; AGCP-001/002 evidence."
+    },
+    {
+      "id": "AGCP-010",
+      "title": "Ingest session activity and replay it into a durable inspector timeline",
+      "milestone": "M2",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "codex",
+      "dependencies": [
+        "AGCP-006",
+        "AGCP-009"
+      ],
+      "outcome": "Provide reliable event evidence for approvals, conversation routing and session inspection.",
+      "scope": "Normalize messages, tools/results, errors, diff references and terminal turns; preserve source correlation and ledger ordering. Apply minimal retention/redaction rules before persistence.",
+      "acceptance": [
+        "Supported native events map to stable domain events without duplicate effects on replay.",
+        "A timeline reconstructs after restart with native session/turn/item correlation and explicit gaps.",
+        "Tool output and transcript retention/redaction follow project settings; raw reasoning and secrets are excluded by default.",
+        "Terminal turns are captured independently of agent MCP reporting, including failed/interrupted statuses."
+      ],
+      "verification": "Replay sanitized duplicate/out-of-order/partial streams and verify persisted order, gap markers, redaction and terminal-event capture.",
+      "references": "Technical spec §§8–9, 11; PRD §§7.4–5."
+    },
+    {
+      "id": "AGCP-011",
+      "title": "Compile initial persona context and expose scoped AGCP MCP tools",
+      "milestone": "M2",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "orchestration",
+      "dependencies": [
+        "AGCP-005",
+        "AGCP-007",
+        "AGCP-009"
+      ],
+      "outcome": "Give the root orchestrator deterministic task context and an authenticated narrow control surface.",
+      "scope": "Compile an initial versioned orchestrator context with objective, constraints, identity, authority references and reporting contract. Implement get_task_context, register_artifact, request_subagent and report_status with preliminary artifact records; richer registry protocols arrive in M5.",
+      "acceptance": [
+        "The connector injects a deterministic context package and stores its digest/version references without logging secrets.",
+        "MCP derives task/project identity from the session capability and rejects forged parent/scope claims.",
+        "Tool inputs/outputs are schema-validated, and status reports cannot bypass legal transitions or accept their own completion.",
+        "Root session can retrieve context and publish a provenance-bearing artifact stub."
+      ],
+      "verification": "Exercise context determinism, foreign task IDs, revoked/expired capability calls, invalid schemas and a native session accessing the scoped MCP tools.",
+      "references": "Technical spec §§4–5, 10; PRD §§8–9."
+    },
+    {
+      "id": "AGCP-012",
+      "title": "Register policy-validated child sessions with isolated workspaces",
+      "milestone": "M2",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "orchestration",
+      "dependencies": [
+        "AGCP-009",
+        "AGCP-011"
+      ],
+      "outcome": "Allow controlled delegation while preserving registered identity, authority limits and source workspace safety.",
+      "scope": "Validate child role, parent, depth, budget, tool/data limits and workspace ownership before provisioning. Apply the worktree/checkout strategy from M0 and compensate partial session launch failures.",
+      "acceptance": [
+        "An authorized root request creates a registered child task/session with correct parent and reduced scope.",
+        "Depth/budget/policy violations, forged parentage, authority expansion and unregistered spawn paths are rejected.",
+        "Concurrent writers receive isolated workspaces or explicit serialized ownership according to ADR 0002.",
+        "Partial provisioning and cancellation revoke credentials and release resources without orphaned active sessions."
+      ],
+      "verification": "Run root-to-child native flow plus denied depth/scope/budget cases, overlapping writer attempts and injected process-start failure.",
+      "references": "PRD §§7.2, 9, 11.2; technical spec §§3–5, 11."
+    },
+    {
+      "id": "AGCP-013",
+      "title": "Implement immutable approval records and one-shot decision binding",
+      "milestone": "M3",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "governance",
+      "dependencies": [
+        "AGCP-005",
+        "AGCP-006",
+        "AGCP-009"
+      ],
+      "outcome": "Create the exact-action boundary that every human or future agent decision must satisfy.",
+      "scope": "Normalize proven native approvals, freeze canonical action bytes/digest and original native correlation, and implement signed decision verification and durable single-use state transitions. Only supported exact-action kinds may enter the approval path.",
+      "acceptance": [
+        "Approval identity binds project/task/session/turn/native request and immutable action content, allowed decision, expiry and policy snapshot.",
+        "Bridge validates the AGCP decision envelope before translating it to a supported one-action native response.",
+        "Wrong digest/session/resolver, invalid signature, expiry, unsupported decisions and reused requests cannot authorize execution.",
+        "Concurrent resolutions have one durable winner; missing immutable payload or uncertain state is unavailable/fail-closed rather than reconstructed from a model summary."
+      ],
+      "verification": "Use table-driven negative cases, concurrent resolution tests and canonicalization fixtures; verify a second request cannot reuse the first decision.",
+      "references": "PRD §§7.3, 9; technical spec §§6–7, 11; ADR 0002."
+    },
+    {
+      "id": "AGCP-014",
+      "title": "Deliver human approval inbox and native accept/deny flow",
+      "milestone": "M3",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "ui",
+      "dependencies": [
+        "AGCP-008",
+        "AGCP-010",
+        "AGCP-013"
+      ],
+      "outcome": "Let a human review and resolve a native pending action while Codex remains paused.",
+      "scope": "Surface pending approvals with what/why/target/impact/risk/expiry/evidence and current owner. Dispatch a verified one-shot response to the original pending request and reconcile native resolution outcomes.",
+      "acceptance": [
+        "A real native approval appears as pending and its original action remains paused until an explicit valid decision.",
+        "Approve and deny resolve only that original action, with durable human identity and policy/authority references.",
+        "Stale cards, double-clicks, disconnected sessions and insufficient capability cannot approve; UI distinguishes decision recorded from execution observed.",
+        "Session-wide permission and persistent policy amendments are unavailable in the initial one-action flow."
+      ],
+      "verification": "Demonstrate native approve/deny flows using harmless sentinel actions and exercise stale UI, duplicate submit and two simultaneous pending sessions.",
+      "references": "PRD §§7.3, 8, 11.3–4; technical spec §§6–7."
+    },
+    {
+      "id": "AGCP-015",
+      "title": "Harden approval expiry, disconnect, crash recovery and key loss",
+      "milestone": "M3",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "governance",
+      "dependencies": [
+        "AGCP-013",
+        "AGCP-014"
+      ],
+      "outcome": "Ensure a service failure cannot turn pending or uncertain approval delivery into unauthorized execution.",
+      "scope": "Implement expiry, cancellation, native request reconciliation, bounded retry, key storage/rotation or loss policy, and recovery of recorded versus dispatched decisions. Design for the crash window around native send.",
+      "acceptance": [
+        "Service/connector disconnect, expired decision and unavailable verification keep actions denied or pending without accidental native acceptance.",
+        "Restart reconciles native pending requests; decisions are never replayed against a replacement action or newly reused native identifier.",
+        "A crash after send but before acknowledgement is marked uncertain and reconciled; there is no blind resend or unsupported exactly-once execution claim.",
+        "Missing/corrupted key material and interrupted audit writes have documented safe behavior and actionable operator recovery."
+      ],
+      "verification": "Inject failures before commit, after commit, around native send, during acknowledgement, on timeout and on key loss; assert no unreviewed sentinel side effect.",
+      "references": "PRD §9; technical spec §§6, 11–12; ADR 0002."
+    },
+    {
+      "id": "AGCP-016",
+      "title": "Build approval-anchored Activity, Changes, Context and Decision Path inspector",
+      "milestone": "M3",
+      "priority": "P1",
+      "kind": "feature",
+      "area": "ui",
+      "dependencies": [
+        "AGCP-010",
+        "AGCP-014"
+      ],
+      "outcome": "Give the human enough evidence to decide in AGCP without requiring a separate Codex UI.",
+      "scope": "Open the persisted session timeline anchored on the exact approval event. Keep the pending action visible while showing activity, supported diffs/change evidence, task/persona/artifact context, and human/policy decision ancestry.",
+      "acceptance": [
+        "An approval card opens the correct session/event and remains pinned during navigation.",
+        "Activity shows preceding messages/tools/results with gaps explicit; Changes exposes available diff and Git references with unavailable evidence labeled.",
+        "Context shows task objective, parent, persona version, authority and workspace/sandbox summary; Decision Path shows recorded policy checks and resolver ancestry.",
+        "Resolution updates the same event view; future delegated judgments fit without fabricating them in the MVP."
+      ],
+      "verification": "Run a synthetic but persisted approval inspection flow and a live native session smoke check; verify wrong-session deep links, missing diff, long output and keyboard focus.",
+      "references": "PRD §§7.5, 8, 11.5, 11.8; technical spec §9."
+    },
+    {
+      "id": "AGCP-017",
+      "title": "Observe terminal turns and route advisory signals into parent inboxes",
+      "milestone": "M4",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "orchestration",
+      "dependencies": [
+        "AGCP-010",
+        "AGCP-012"
+      ],
+      "outcome": "Ensure a child question or blocker reaches the parent even when the child never calls a reporting tool.",
+      "scope": "Create TurnObservation records from connector events and advisory labels for awaiting_input, decision_proposal, blocker, completion_claim, progress_update and ambiguous. Route source-linked inbox messages idempotently.",
+      "acceptance": [
+        "Every meaningful terminal/waiting child turn creates a source-linked observation and a parent inbox entry without an MCP call.",
+        "Questions, decisions and blockers alert the parent; interrupted/failed turns retain true terminal status.",
+        "Classifier failure/uncertainty retains an ambiguous observation; labels cannot approve actions, terminate sessions or accept task completion.",
+        "Repeated native events produce no duplicate notifications or review turns; root/orphan handling is defined."
+      ],
+      "verification": "Replay question, blocker, progress, completion, ambiguous, failed and interrupted fixture turns, including duplicates and classifier outage; demonstrate one native child question flow.",
+      "references": "PRD §§7.4, 11.7; technical spec §8."
+    },
+    {
+      "id": "AGCP-018",
+      "title": "Add parent/human inbox replies and bounded review-turn scheduling",
+      "milestone": "M4",
+      "priority": "P1",
+      "kind": "feature",
+      "area": "orchestration",
+      "dependencies": [
+        "AGCP-014",
+        "AGCP-017"
+      ],
+      "outcome": "Close the conversational loop while keeping human approval authority and session ownership explicit.",
+      "scope": "Add reply, request revision, propose/accept completion and escalate operations with identity checks. Schedule bounded parent review turns through the registered connector and guard against recursive wakeups and overlapping turns.",
+      "acceptance": [
+        "Parent or human replies reach the exact registered child session and retain message provenance.",
+        "Parent review is bounded by budget/deadline; unavailable parents surface an escalation instead of blocking indefinitely.",
+        "Completion acceptance follows task policy and remains separate from an advisory completion claim.",
+        "Inbox messages and model output cannot bypass the native approval inbox; duplicate routing and review loops are bounded."
+      ],
+      "verification": "Demonstrate child question → parent inbox → parent/human reply → child continuation; test foreign-parent calls, busy parent, timeout and repeated notification loops.",
+      "references": "PRD §§7.4, 8; technical spec §§7–8; ADR 0001."
+    },
+    {
+      "id": "AGCP-019",
+      "title": "Version persona and skill templates and ship the MVP role library",
+      "milestone": "M5",
+      "priority": "P1",
+      "kind": "feature",
+      "area": "artifacts",
+      "dependencies": [
+        "AGCP-011"
+      ],
+      "outcome": "Make session behavior reproducible as personas and attached procedures evolve.",
+      "scope": "Implement immutable persona/skill versions, clone/edit UI and session version pinning. Provide orchestrator, architect, senior/junior implementer, codebase analyst, security reviewer, test engineer, release reviewer and research personas.",
+      "acceptance": [
+        "All nine PRD roles declare mandate, authority template, tool/data scope, escalation, required inputs, expected outputs and completion contract.",
+        "Editing/cloning creates a new immutable version; existing sessions keep their original versions and context digest.",
+        "Skills declare procedures and input/output/capability requirements and can attach to multiple personas.",
+        "Persona editing cannot self-grant authority or expand a running session capability."
+      ],
+      "verification": "Compile representative personas, compare version/digest stability, and exercise attempted scope expansion and missing required metadata.",
+      "references": "PRD §8 personas and skills; technical spec §§3–4."
+    },
+    {
+      "id": "AGCP-020",
+      "title": "Implement versioned logical artifact registry and permitted resolution",
+      "milestone": "M5",
+      "priority": "P1",
+      "kind": "feature",
+      "area": "artifacts",
+      "dependencies": [
+        "AGCP-006",
+        "AGCP-011",
+        "AGCP-019"
+      ],
+      "outcome": "Let agents resolve project inputs by logical key with trustworthy version, provenance and freshness.",
+      "scope": "Extend initial artifact records into versioned content/external references, approval/status, provenance, access scope, and freshness. Support current_roadmap and codebase_map logical keys.",
+      "acceptance": [
+        "Resolution returns only an approved, readable, non-stale version for the caller/project.",
+        "External GitHub files/issues/PRs/commits and AGCP-native content are supported without duplicating private content into Git.",
+        "Supersession, revoked access, missing artifacts and source-commit freshness produce explicit results.",
+        "Task UI and inspector show linked artifact version and provenance."
+      ],
+      "verification": "Exercise stale/current branches, superseded versions, denied scope, missing inputs and external-reference records using synthetic examples.",
+      "references": "PRD §8 artifact registry, 11.5; technical spec §§3, 10."
+    },
+    {
+      "id": "AGCP-021",
+      "title": "Enforce required artifact context protocols before issue planning",
+      "milestone": "M5",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "artifacts",
+      "dependencies": [
+        "AGCP-019",
+        "AGCP-020"
+      ],
+      "outcome": "Prevent agents from proceeding with missing, stale or unauthorized planning context.",
+      "scope": "Implement protocol precondition checks at session compilation and governed side-effect execution. Provide an issue-planning flow requiring approved current_roadmap and a sufficiently fresh codebase_map.",
+      "acceptance": [
+        "Missing/stale/unapproved/unreadable required artifacts block the operation or create an explicit escalation.",
+        "Successful compilation pins artifact versions, source commit and freshness evidence in provenance.",
+        "Re-check requirements immediately before an external write so context changes cannot bypass validation.",
+        "A successful demo resolves logical keys, publishes issue proposals and preserves source input references."
+      ],
+      "verification": "Run missing/stale/foreign input cases plus a valid planning flow; change an input between proposal and write and confirm revalidation blocks or requires a fresh proposal.",
+      "references": "PRD §§7.6, 11.6; technical spec §§4, 10."
+    },
+    {
+      "id": "AGCP-022",
+      "title": "Add optional GitHub authorization, repository linking and read-only references",
+      "milestone": "M5",
+      "priority": "P1",
+      "kind": "feature",
+      "area": "github",
+      "dependencies": [
+        "AGCP-007",
+        "AGCP-020"
+      ],
+      "outcome": "Connect engineering artifacts without making GitHub credentials a prerequisite for local governance.",
+      "scope": "Implement the M0-selected authorization approach, capability/status UI, repository linking and read-only issue/PR/commit/file reference resolution. Store secret references via secure storage, not the database.",
+      "acceptance": [
+        "The full local project/session/approval workflow works with GitHub unconfigured.",
+        "Authorization scopes distinguish read, write, administration and release capability; UI does not imply unavailable permissions.",
+        "A project links a repository and resolves permitted engineering references with provenance.",
+        "Revocation, wrong account/repository and rate-limit failures are recoverable without leaking credentials."
+      ],
+      "verification": "Use sanitized HTTP fixtures for scope, revocation and rate-limit behavior plus a least-privilege read-only smoke check against an owned test repository.",
+      "references": "PRD §§7.1, 8 GitHub integration; technical spec §§1, 11; ADR 0002."
+    },
+    {
+      "id": "AGCP-023",
+      "title": "Govern GitHub repository and issue creation with exact proposals",
+      "milestone": "M5",
+      "priority": "P0",
+      "kind": "feature",
+      "area": "github",
+      "dependencies": [
+        "AGCP-013",
+        "AGCP-014",
+        "AGCP-021",
+        "AGCP-022"
+      ],
+      "outcome": "Allow explicit engineering side effects while preserving approval and context provenance.",
+      "scope": "Implement application-owned proposals for repository creation and issue creation. Bind account/owner/repository/visibility or issue title/body/labels to immutable approval data. Keep merge, collaborator, permissions and release operations unavailable for the MVP.",
+      "acceptance": [
+        "A human-approved repository proposal creates exactly the chosen owner/name/visibility, then links it to the project.",
+        "Issue creation requires current artifact inputs, scoped GitHub authorization and a valid exact-proposal human decision.",
+        "Changed title/body/target/visibility or invalid context invalidates the old decision; denied proposals cause no write.",
+        "Network failure/retry reconciles existing external results before retrying, avoiding duplicate repos/issues; resulting references and decisions are audited."
+      ],
+      "verification": "Exercise approved/denied/stale/modified proposals, insufficient scope and ambiguous network completion with fixtures. Run controlled writes in an explicitly designated owned test target for live acceptance.",
+      "references": "PRD §§7.1, 7.6, 8 GitHub integration; technical spec §§10–11."
+    },
+    {
+      "id": "AGCP-024",
+      "title": "Verify all MVP journeys and security/recovery release gates",
+      "milestone": "M6",
+      "priority": "P0",
+      "kind": "chore",
+      "area": "quality",
+      "dependencies": [
+        "AGCP-008",
+        "AGCP-012",
+        "AGCP-015",
+        "AGCP-016",
+        "AGCP-018",
+        "AGCP-021",
+        "AGCP-023"
+      ],
+      "outcome": "Provide concrete evidence for all eight PRD acceptance criteria before calling the project an MVP.",
+      "scope": "Create a repeatable acceptance matrix with synthetic projects and a supported native Codex version. Include cross-project identity, token revocation, decision replay/expiry, local boundary, redaction, recovery and optional GitHub failure cases.",
+      "acceptance": [
+        "All eight PRD acceptance criteria have reproducible steps, expected outcomes and evidence links.",
+        "At least the session, child, native approval and conversational routing journeys run against a real supported connector, not fixtures alone.",
+        "Negative security/recovery scenarios fail closed, with no unresolved release-blocking defect.",
+        "Document measured approval pause/resume reliability and capability limits; avoid unproven encryption or audit-integrity claims."
+      ],
+      "verification": "Run the full acceptance matrix from a clean local state and retain only sanitized summaries and synthetic fixtures in the repository. Open linked defects for any failures and keep the milestone open.",
+      "references": "PRD §§9–11; technical spec §§6–12; docs/ROADMAP.md acceptance matrix."
+    },
+    {
+      "id": "AGCP-025",
+      "title": "Package the local MVP and document onboarding, recovery and limits",
+      "milestone": "M6",
+      "priority": "P1",
+      "kind": "chore",
+      "area": "platform",
+      "dependencies": [
+        "AGCP-024"
+      ],
+      "outcome": "Make the verified single-user local application installable and understandable.",
+      "scope": "Package for the initial target OS and document prerequisites, Codex version/auth, startup/shutdown, data location, security model, recovery, optional GitHub authorization and supported capabilities. Resolve licensing before distributing.",
+      "acceptance": [
+        "A clean-machine or clean-account walkthrough installs and runs the verified project/session/approval flow.",
+        "Operator docs explain pending/denied/uncertain decisions, key loss and backup/recovery using actual behavior.",
+        "Release notes identify unsupported native UI/coexistence or approval categories and the supported version matrix.",
+        "Distribution license is explicit; artifacts exclude credentials, local project content and session data; release checklist records checks and known limits."
+      ],
+      "verification": "Perform the documented onboarding and recovery walkthrough against the packaged build; inspect distribution contents and verify application/CI checks remain green.",
+      "references": "PRD §§1, 5, 11–12; technical spec §§11–12; AGCP-003 licensing decision."
+    },
+    {
+      "id": "AGCP-026",
+      "title": "Add bounded parent authority, delegated decisions and escalation",
+      "milestone": "M7",
+      "priority": "P1",
+      "kind": "feature",
+      "area": "governance",
+      "dependencies": [
+        "AGCP-018",
+        "AGCP-025"
+      ],
+      "outcome": "Allow eligible parents to resolve child approvals without weakening the exact-action or human-only boundary.",
+      "scope": "Implement authority grants and policy predicates, nearest eligible parent routing, bounded approval review turns and escalation. Treat clarify/narrow/split as workflow outcomes requiring fresh action identity when content changes.",
+      "acceptance": [
+        "A parent resolves only capabilities/targets/decision types within an unexpired grant and delegation depth.",
+        "Human-only categories, missing evidence and unauthorized/failed/timed-out parents escalate to the next eligible resolver.",
+        "Agents cannot change parentage, self-grant authority, expand tool scope or approve modified action content.",
+        "Decision Path shows every judgment, authority/policy version, escalation reason and exact bound decision."
+      ],
+      "verification": "Run a multi-level authority matrix with human-only categories, expired grants, timeout, forged ancestry and replacement actions; verify the original child remains paused until a valid resolution.",
+      "references": "PRD §§7.3, 8–9, 12 Next; technical spec §7; ADR 0001."
+    },
+    {
+      "id": "AGCP-027",
+      "title": "Add transparent recommendation bundles over immutable approval nodes",
+      "milestone": "M7",
+      "priority": "P2",
+      "kind": "feature",
+      "area": "governance",
+      "dependencies": [
+        "AGCP-026"
+      ],
+      "outcome": "Reduce repetitive human review without hiding the atomic actions being authorized.",
+      "scope": "Create recommendation-only bundles, member inspection/removal and member-specific resolution. Keep each approval node, digest, expiry and outcome permanent and independently auditable.",
+      "acceptance": [
+        "A bundle never replaces or merges atomic approval identity or authority checks.",
+        "A human can inspect/remove individual members before deciding.",
+        "Expired/changed/unavailable members cannot inherit a bundle decision; partial outcomes are explicit.",
+        "Audit and inspector retain member provenance, recommendation author and individual native dispatch outcomes."
+      ],
+      "verification": "Test mixed validity, member removal, changed action, concurrent member resolution and partial dispatch failure.",
+      "references": "PRD §8 approval governance, 12 Next; technical spec §7."
+    },
+    {
+      "id": "AGCP-028",
+      "title": "Implement redacted project export/import and integrity validation",
+      "milestone": "M7",
+      "priority": "P2",
+      "kind": "feature",
+      "area": "platform",
+      "dependencies": [
+        "AGCP-025"
+      ],
+      "outcome": "Allow portable governance metadata without exporting credentials or private source by default.",
+      "scope": "Define a versioned archive with redaction options, references, integrity metadata and safe import. Rebind external identities explicitly; never revive imported approvals or capabilities.",
+      "acceptance": [
+        "Default export excludes source code, credentials, capability/signing material and raw session content.",
+        "Import validates archive schema/integrity and prevents path traversal, resource exhaustion and cross-project identity collision.",
+        "Imported history remains historical; pending decisions, sessions and grants are inactive until explicitly re-established.",
+        "Round-trip metadata and external references preserve provenance with redaction and integrity limits documented."
+      ],
+      "verification": "Round-trip synthetic projects; inspect default archive contents and reject tampered, malicious-path, oversize and incompatible-version archives.",
+      "references": "PRD §§9, 12 Next; technical spec §§11–12."
+    }
+  ]
+}
