@@ -15,7 +15,6 @@ import {
   redact,
   type CapabilityPrincipal,
 } from "./security.js";
-import { sourceCommit } from "./workspaces.js";
 import { mcpOutputSchemas, type CoordinationTool } from "./mcp-contracts.js";
 
 const short = z.string().trim().min(1).max(500);
@@ -38,7 +37,7 @@ export async function handleMcp(
     fn: () => unknown | Promise<unknown>,
   ) {
     try {
-      task();
+      runtime.validateTool(principal, name);
       const output = mcpOutputSchemas[name].parse(await fn());
       return { ...result(output), structuredContent: output };
     } catch (error) {
@@ -70,7 +69,13 @@ export async function handleMcp(
     () =>
       guarded("get_task_context", async () => {
         const own = task();
-        const persona = runtime.must<Persona>("personas", own.personaId);
+        const session = runtime.must<
+          import("../../../packages/domain/src/index.js").Session
+        >("sessions", principal.sessionId, principal.projectId);
+        const persona = runtime.must<Persona>(
+          "personas",
+          session.personaVersionId || own.personaId,
+        );
         const children = runtime.store
           .list<Task>("tasks", principal.projectId)
           .filter((t) => t.parentTaskId === own.id);
@@ -117,28 +122,7 @@ export async function handleMcp(
     },
     (input) =>
       guarded("resolve_artifact", async () => {
-        const project = runtime.store.get<
-          import("../../../packages/domain/src/index.js").Project
-        >("projects", principal.projectId)!;
-        const head = await sourceCommit(task().workspace || project.workspace);
-        const artifact = runtime.store
-          .list<Artifact>("artifacts", principal.projectId)
-          .filter(
-            (a) =>
-              a.logicalKey === input.logicalKey &&
-              a.status === "approved" &&
-              (!a.expiresAt || Date.parse(a.expiresAt) > Date.now()) &&
-              (a.logicalKey !== "codebase_map" ||
-                (head && a.sourceCommit === head)),
-          )
-          .sort((a, b) => b.version - a.version)[0];
-        requireCondition(
-          artifact,
-          "artifact_unavailable",
-          "No approved, current, readable artifact is available.",
-          409,
-        );
-        return artifact;
+        return runtime.resolveArtifactForSession(principal, input.logicalKey);
       }),
   );
   server.registerTool(
@@ -155,7 +139,7 @@ export async function handleMcp(
     },
     (input) =>
       guarded("register_artifact", () =>
-        runtime.registerArtifact(principal.projectId, principal.taskId, input),
+        runtime.registerArtifact(principal.projectId, principal.taskId, input, principal),
       ),
   );
   server.registerTool(
@@ -232,7 +216,11 @@ export async function handleMcp(
       outputSchema: mcpOutputSchemas.reply_to_child,
       description:
         "Send a bounded reply into one of your direct child sessions. This never grants action approval.",
-      inputSchema: { childTaskId: z.string().min(1).max(200), text: message },
+      inputSchema: {
+        childTaskId: z.string().min(1).max(200),
+        observationId: z.string().min(1).max(200).optional(),
+        text: message,
+      },
     },
     (input) =>
       guarded("reply_to_child", async () => {
@@ -247,17 +235,38 @@ export async function handleMcp(
           "The target is not your direct registered child.",
           403,
         );
+        if (input.observationId) {
+          const observation = runtime.must<Observation>(
+            "observations",
+            input.observationId,
+            principal.projectId,
+          );
+          requireCondition(
+            observation.taskId === child.id &&
+              observation.parentTaskId === principal.taskId,
+            "not_your_observation",
+            "This observation is outside your direct child scope.",
+            403,
+          );
+          return await runtime.replyObservation(
+            principal.projectId,
+            observation.id,
+            input.text,
+            `agent:${principal.taskId}`,
+          );
+        }
         const response = await runtime.sendTaskMessage(
           principal.projectId,
           child.id,
           input.text,
-          "parent",
+          `agent:${principal.taskId}`,
         );
         for (const observation of runtime.store
           .list<Observation>("observations", principal.projectId)
           .filter(
             (o) =>
               o.taskId === child.id &&
+              o.sessionId === child.sessionId &&
               o.parentTaskId === principal.taskId &&
               o.state === "unread",
           ))

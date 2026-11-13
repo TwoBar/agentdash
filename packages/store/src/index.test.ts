@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
-import { actionDigest, freshEntity, type ActivityEvent, type Approval, type Artifact, type Decision, type Project, type Session, type Task } from '../../domain/src/index.js';
+import { actionDigest, digest, freshEntity, type ActivityEvent, type Approval, type Artifact, type Decision, type Project, type Session, type Task, type Persona, type SkillVersion, type Observation, type ProfileConnection, type GitHubProposal } from '../../domain/src/index.js';
 import { Store } from './index.js';
 
 function graph(store: Store, name = 'Synthetic project') {
@@ -42,7 +42,7 @@ test('graph persists across reopen with private file permissions and verified mi
     store.close();
     const raw = new DatabaseSync(file.path);
     assert.equal(raw.prepare('PRAGMA journal_mode').get()?.journal_mode, 'delete');
-    assert.equal(raw.prepare('SELECT count(*) AS count FROM schema_migrations').get()?.count, 2);
+    assert.equal(raw.prepare('SELECT count(*) AS count FROM schema_migrations').get()?.count, 3);
     raw.close();
   } finally { file.cleanup(); }
 });
@@ -226,7 +226,7 @@ test('artifact uniqueness migration backfills earlier version records before acc
     const artifact: Artifact = { ...freshEntity('art'), projectId: base.project.id, taskId: base.task.id, logicalKey: 'synthetic_key', version: 1, status: 'draft', summary: 'Synthetic prior schema', content: null, externalRef: null, sourceCommit: null, expiresAt: null };
     first.create('artifacts', artifact); first.close();
     const raw = new DatabaseSync(file.path);
-    raw.exec("DELETE FROM source_keys WHERE collection='artifacts'; DELETE FROM schema_migrations WHERE version=2"); raw.close();
+    raw.exec("DELETE FROM source_keys WHERE collection='artifacts'; DELETE FROM schema_migrations WHERE version>=2"); raw.close();
     const migrated = new Store(file.path);
     assert.throws(() => migrated.create('artifacts', { ...artifact, ...freshEntity('art') }), /UNIQUE/);
     assert.equal(migrated.verifyAudit().valid, true); migrated.close();
@@ -275,4 +275,124 @@ test('offline database copy restores graph and verifiable audit without claiming
     assert.equal(restored.get<Task>('tasks', base.task.id)?.projectId, base.project.id);
     assert.equal(restored.verifyAudit().valid, true); restored.close();
   } finally { original.cleanup(); backup.cleanup(); }
+});
+
+test('reusable skill versions and rich personas persist immutable attachments without broadening live sessions', () => {
+  const file = disk(); let store = new Store(file.path);
+  try {
+    const skill = store.create<SkillVersion>('skills', { ...freshEntity('skl'), skillId: 'synthetic_evidence', name: 'Synthetic evidence procedure', version: 1, procedure: 'Inspect approved context and report evidence', inputSchema: { type: 'object' }, outputSchema: { type: 'object' }, requiredCapabilities: ['get_task_context','report_status'] });
+    const template: Persona = { ...freshEntity('per'), name: 'Synthetic researcher', role: 'synthetic-research', mandate: 'Investigate bounded evidence', instructions: 'Report evidence', requiredArtifacts: [], skills: [skill.name], authority: 'No human authority', version: 1, authorityTemplate: { mode: 'human-only', capabilities: ['get_task_context','report_status'] }, toolScope: ['get_task_context','report_status'], dataScope: ['current-project'], escalationRules: ['Escalate blockers to operator'], expectedOutputs: ['Evidence summary'], completionContract: 'Human acceptance required', skillVersionIds: [skill.id] };
+    const persona = store.create<Persona>('personas', template);
+    store.create<Persona>('personas', { ...template, ...freshEntity('per'), role: 'synthetic-analyst', name: 'Synthetic analyst' });
+    assert.throws(() => store.create<SkillVersion>('skills', { ...skill, ...freshEntity('skl') }), /UNIQUE/);
+    assert.throws(() => store.create<Persona>('personas', { ...template, ...freshEntity('per') }), /UNIQUE/);
+    assert.throws(() => store.update<SkillVersion>('skills', skill.id, 1, { procedure: 'Silently replace procedure' }), /Immutable/);
+    assert.throws(() => store.update<Persona>('personas', persona.id, 1, { skillVersionIds: [] }), /Immutable/);
+    assert.throws(() => store.create<Persona>('personas', { ...template, ...freshEntity('per'), version: 2, skillVersionIds: ['missing-skill'] }), /missing skill/);
+    assert.throws(() => store.create<Persona>('personas', { ...template, ...freshEntity('per'), version: 2, expectedOutputs: undefined }), /Unsupported canonical/);
+    const next = store.create<SkillVersion>('skills', { ...skill, ...freshEntity('skl'), version: 2, procedure: 'A new reviewed procedure version' });
+    store.create<Persona>('personas', { ...template, ...freshEntity('per'), version: 2, skillVersionIds: [next.id] });
+    assert.deepEqual(store.get<Persona>('personas', persona.id)?.skillVersionIds, [skill.id]);
+    store.close(); store = new Store(file.path);
+    assert.equal(store.list('skills').length, 2); assert.deepEqual(store.get<Persona>('personas', persona.id)?.skillVersionIds, [skill.id]); assert.equal(store.verifyAudit().valid, true);
+  } finally { store.close(); file.cleanup(); }
+});
+
+test('observation terminal status is additive, immutable and does not rewrite legacy audit records', () => {
+  const file = disk(); let store = new Store(file.path);
+  try {
+    const base = graph(store);
+    const legacy = store.create<Observation>('observations', { ...freshEntity('obs'), projectId: base.project.id, taskId: base.task.id, parentTaskId: null, sessionId: base.session.id, sourceTurnId: 'legacy-turn', classification: 'ambiguous', summary: 'Synthetic legacy', state: 'unread', deadlineAt: null });
+    const modern = store.create<Observation>('observations', { ...legacy, ...freshEntity('obs'), sourceTurnId: 'failed-turn', terminalStatus: 'failed', classification: 'blocker' });
+    const oldHash = store.audit().find(entry => entry.entityId === legacy.id)!.hash;
+    assert.throws(() => store.update<Observation>('observations', modern.id, 1, { terminalStatus: 'completed' }), /Immutable/);
+    store.close(); store = new Store(file.path);
+    assert.equal(store.get<Observation>('observations', legacy.id)?.terminalStatus, undefined);
+    assert.equal(store.get<Observation>('observations', modern.id)?.terminalStatus, 'failed');
+    assert.equal(store.audit().find(entry => entry.entityId === legacy.id)!.hash, oldHash); assert.equal(store.verifyAudit().valid, true);
+  } finally { store.close(); file.cleanup(); }
+});
+
+test('artifact task-read scope must reference same-project tasks and cannot be rewritten', () => {
+  const store = new Store(':memory:');
+  try {
+    const first = graph(store); const second = graph(store, 'Other project');
+    const artifact: Artifact = { ...freshEntity('art'), projectId: first.project.id, taskId: first.task.id, logicalKey: 'synthetic_scoped', version: 1, status: 'draft', summary: 'Synthetic', content: null, externalRef: null, sourceCommit: null, expiresAt: null, readableByTaskIds: [first.task.id] };
+    store.create('artifacts', artifact);
+    assert.throws(() => store.create('artifacts', { ...artifact, ...freshEntity('art'), version: 2, readableByTaskIds: [second.task.id] }), /cross-project/);
+    assert.throws(() => store.update<Artifact>('artifacts', artifact.id, 1, { readableByTaskIds: [] }), /Immutable/);
+  } finally { store.close(); }
+});
+
+function connection(): ProfileConnection {
+  return { ...freshEntity('con'), provider: 'gh-cli', credentialProvider: 'gh-cli', login: 'synthetic-login', accountId: 100, state: 'connected', capabilities: { read: true, repositoryCreate: true, issueCreate: true, administration: false, release: false }, owners: [{ login: 'synthetic-login', id: 100 }] };
+}
+test('profile connections preserve account/provider identity while human settings may narrow capabilities', () => {
+  const store = new Store(':memory:');
+  try {
+    const profile = store.create('connections', connection());
+    assert.throws(() => store.create('connections', { ...connection(), rawCredential: 'synthetic-never-store' } as ProfileConnection), /Unsupported GitHub connection metadata/);
+    assert.throws(() => store.update<ProfileConnection>('connections', profile.id, 1, { login: 'other-user' }), /Immutable/);
+    assert.throws(() => store.update<ProfileConnection>('connections', profile.id, 1, { accountId: 999 }), /Immutable/);
+    assert.throws(() => store.update<ProfileConnection>('connections', profile.id, 1, { credentialProvider: 'plaintext' as never }), /Immutable/);
+    const changed = store.update<ProfileConnection>('connections', profile.id, 1, { state: 'disconnected', capabilities: { ...profile.capabilities, repositoryCreate: false } }, 'human');
+    assert.equal(changed.accountId, 100); assert.equal(changed.capabilities.repositoryCreate, false); assert.equal(store.verifyAudit().valid, true);
+  } finally { store.close(); }
+});
+
+test('GitHub proposals preserve exact scope/action and consume dispatch once with explicit reconciliation', () => {
+  const store = new Store(':memory:');
+  try {
+    const first = graph(store); const other = graph(store, 'Other project'); const profile = store.create('connections', connection());
+    store.update<Project>('projects', first.project.id, 1, { githubConnectionId: profile.id, githubRepositoryId: 123 });
+    const proposal: GitHubProposal = { ...freshEntity('ghp'), projectId: first.project.id, taskId: first.task.id, connectionId: profile.id, kind: 'issue.create', payload: { repositoryId: 123, title: 'Synthetic issue' }, actionDigest: digest({ title: 'Synthetic issue' }), state: 'pending', expiresAt: new Date(Date.now() + 60_000).toISOString(), reason: null, externalUrl: null, bootId: 'synthetic-boot' };
+    const pending = store.create('githubProposals', proposal);
+    assert.throws(() => store.create('githubProposals', { ...proposal, ...freshEntity('ghp'), taskId: other.task.id }), /cross-project/);
+    assert.throws(() => store.create('githubProposals', { ...proposal, ...freshEntity('ghp'), connectionId: 'missing' }), /connection/);
+    assert.throws(() => store.update<GitHubProposal>('githubProposals', pending.id, 1, { payload: { title: 'Changed action' } }), /Immutable/);
+    assert.throws(() => store.update<GitHubProposal>('githubProposals', pending.id, 1, { state: 'succeeded' }), /Invalid GitHub proposal transition/);
+    const dispatched = store.update<GitHubProposal>('githubProposals', pending.id, 1, { state: 'dispatching', signature: 'synthetic-signature', verificationKey: 'synthetic-public-key', keyId: 'synthetic-key', resolver: 'human', decision: 'approve', decidedAt: new Date().toISOString(), reconciliationMarker: 'synthetic-marker' });
+    assert.throws(() => store.update<GitHubProposal>('githubProposals', dispatched.id, dispatched.revision, { state: 'pending' }), /Invalid GitHub proposal/);
+    assert.throws(() => store.update<GitHubProposal>('githubProposals', dispatched.id, dispatched.revision, { signature: 'replaced-signature' }), /Immutable/);
+    const uncertain = store.update<GitHubProposal>('githubProposals', dispatched.id, dispatched.revision, { state: 'uncertain' });
+    const reconciled = store.update<GitHubProposal>('githubProposals', uncertain.id, uncertain.revision, { state: 'succeeded', externalUrl: 'https://github.com/synthetic/project/issues/1' });
+    assert.equal(reconciled.signature, 'synthetic-signature'); assert.equal(store.verifyAudit().valid, true);
+  } finally { store.close(); }
+});
+
+test('registry migration backfills legacy persona identity without changing old metadata or audit bytes', () => {
+  const file = disk(); let store = new Store(file.path);
+  try {
+    const persona: Persona = { ...freshEntity('per'), name: 'Synthetic legacy', role: 'legacy-role', mandate: 'Synthetic', instructions: 'Synthetic', requiredArtifacts: [], skills: [], authority: 'Human only', version: 1 };
+    store.create('personas', persona); const oldHash = store.audit()[0].hash; store.close();
+    const raw = new DatabaseSync(file.path); raw.exec("DELETE FROM source_keys WHERE collection='personas'; DELETE FROM schema_migrations WHERE version=3"); raw.close();
+    store = new Store(file.path);
+    assert.deepEqual(store.get<Persona>('personas', persona.id), persona);
+    assert.equal(store.audit()[0].hash, oldHash); assert.equal(store.verifyAudit().valid, true);
+    assert.throws(() => store.create('personas', { ...persona, ...freshEntity('per') }), /UNIQUE/);
+  } finally { store.close(); file.cleanup(); }
+});
+
+test('resumed session references are immutable and cannot cross original project/task identity', () => {
+  const store = new Store(':memory:');
+  try {
+    const own = graph(store); const foreign = graph(store, 'Foreign original session');
+    const resumed = store.create<Session>('sessions', { ...own.session, ...freshEntity('ses'), bootId: 'new-synthetic-boot', resumedFrom: own.session.id });
+    assert.throws(() => store.create<Session>('sessions', { ...own.session, ...freshEntity('ses'), resumedFrom: foreign.session.id }), /session binding/);
+    assert.throws(() => store.update<Session>('sessions', resumed.id, 1, { resumedFrom: foreign.session.id }), /Immutable/);
+    assert.equal(store.get<Session>('sessions', resumed.id)?.resumedFrom, own.session.id); assert.equal(store.verifyAudit().valid, true);
+  } finally { store.close(); }
+});
+
+test('decision policy checks are immutable passed evidence and cannot record invented failed or malformed outcomes', () => {
+  const store = new Store(':memory:');
+  try {
+    const approval = pending(store); const resolution = decision(approval);
+    const checks = [{ check: 'exact_action', outcome: 'pass' as const, summary: 'Synthetic exact binding was verified', checkedAt: new Date().toISOString() }];
+    const recorded = store.create<Decision>('decisions', { ...resolution, policyChecks: checks });
+    assert.throws(() => store.update<Decision>('decisions', recorded.id, 1, { policyChecks: [] }), /Immutable/);
+    const another = pending(store);
+    assert.throws(() => store.create<Decision>('decisions', { ...decision(another), policyChecks: [{ ...checks[0], outcome: 'fail' as never }] }), /Invalid recorded policy checks/);
+    assert.equal(store.get<Decision>('decisions', recorded.id)?.policyChecks?.[0].outcome, 'pass');
+  } finally { store.close(); }
 });

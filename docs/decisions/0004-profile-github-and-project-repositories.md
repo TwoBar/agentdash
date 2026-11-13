@@ -1,6 +1,6 @@
 # ADR 0004: Profile GitHub connection and project repositories
 
-Date: 2026-11-13. Status: accepted product requirement, implementation pending. Owners: AGCP-022 and AGCP-023 / M5.
+Date: 2026-11-13. Status: accepted product requirement; experimental implementation recorded in ADR 0006. Owners: AGCP-022 and AGCP-023 / M5.
 
 ## Context
 
@@ -19,6 +19,6 @@ The user clarified that GitHub is connected at profile level and repositories ar
 
 AGCP-022 owns profile connection/status/disconnection and permitted repository linking/reference reads. AGCP-023 owns per-project repository creation and exact-proposal writes. Test two projects using one connected account with distinct repository bindings, account revocation/mismatch, local-only operation, denied/changed proposals and ambiguous network completion without duplicate creation.
 
-OAuth versus GitHub App and the secure credential provider still need an implementation decision with evidence. This ADR selects product ownership and workflow, not an authentication protocol or a completed integration. The developer's existing `gh` login does not imply an application profile connection.
+[ADR 0006](0006-github-provider-and-exact-proposals.md) selects the initial explicit OS-keyring-backed GitHub CLI provider and records exact-proposal enforcement. A developer's existing `gh` login alone still does not imply an application profile connection. Live remote-write acceptance remains open; this ADR is the product boundary rather than evidence for every remote operation.
 
 Sources: [PRD](../../Agent-Governance-Control-Plane-PRD.md), [technical specification](../../Agent-Governance-Control-Plane-Technical-Spec.md), [AGCP-022](https://github.com/TwoBar/agentdash/issues/22), [AGCP-023](https://github.com/TwoBar/agentdash/issues/23).

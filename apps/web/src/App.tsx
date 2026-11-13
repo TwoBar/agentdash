@@ -6,6 +6,17 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { ApiFailure, LocalApi, asFailure, operationFor } from "./api.js";
+import {
+  GitHubSettings,
+  ArtifactIssuePlan,
+  GitHubProject,
+  useGitHubProfile,
+  type InitialRepository,
+} from "./github.js";
+import { PersonaEditor, PersonaMetadata } from "./personas.js";
+import { inspectionEvents } from "./inspector.js";
+const apiClient = new LocalApi();
 
 import type {
   Project,
@@ -16,6 +27,9 @@ import type {
   Observation,
   Artifact,
   Persona,
+  Decision,
+  AuditEntry,
+  SkillVersion,
 } from "../../../packages/domain/src/index.js";
 
 type Outcome = {
@@ -35,6 +49,24 @@ type State = {
   observations: Observation[];
   personas: Persona[];
   changes?: Record<string, string>;
+  decisions?: Decision[];
+  policyEvaluations?: Array<{
+    id: string;
+    approvalId: string;
+    check: string;
+    outcome: string;
+    summary: string;
+    checkedAt: string;
+  }>;
+  auditEntries?: AuditEntry[];
+  sessionEvidence?: Array<{
+    sessionId: string;
+    sandboxSummary: string;
+    historyGaps: string[];
+    gitBase?: string;
+    gitHead?: string;
+  }>;
+  skills?: SkillVersion[];
   status: {
     codexAvailable: boolean;
     codexVersion: string | null;
@@ -175,54 +207,83 @@ function Badge({ state }: { state: string }) {
 export default function App() {
   const [data, setData] = useState<State | null>(null);
   const [projectId, setProjectId] = useState("");
-  const [csrf, setCsrf] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [actionError, setActionError] = useState("");
+  const [error, setError] = useState<ApiFailure | null>(null);
+  const [actionError, setActionError] = useState<ApiFailure | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [nav, setNav] = useState<"desk" | "artifacts" | "personas">("desk");
+  const [nav, setNav] = useState<"desk" | "artifacts" | "personas" | "github">(
+    "desk",
+  );
   const [selection, setSelection] = useState<Selection | null>(null);
   const [pinnedApprovalId, setPinnedApprovalId] = useState<string | null>(null);
   const [tab, setTab] = useState("Activity");
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const [treeFocusId, setTreeFocusId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const {
+    profile: githubProfile,
+    loading: githubLoading,
+    failure: githubFailure,
+  } = useGitHubProfile(apiClient, dialog === "project");
+  const [projectRepositoryMode, setProjectRepositoryMode] = useState("local");
+  const [initialRepository, setInitialRepository] = useState<
+    (InitialRepository & { projectId: string }) | null
+  >(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [chat, setChat] = useState("");
   const [reply, setReply] = useState("");
-  const [cloneName, setCloneName] = useState("");
-  const [cloneInstructions, setCloneInstructions] = useState("");
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const requestSerial = useRef(0);
   const modalRef = useRef<HTMLElement>(null);
+  const formDrafts = useRef<Record<string, Record<string, string>>>({});
+  const draftKey = (kind: string) =>
+    kind === "project" ? kind : `${activeProjectId}:${kind}`;
+  const draft = (kind: string, name: string, fallback = "") =>
+    formDrafts.current[draftKey(kind)]?.[name] ?? fallback;
+  const rememberDraft = (kind: string, form: HTMLFormElement) => {
+    formDrafts.current[draftKey(kind)] = Object.fromEntries(
+      [...new FormData(form)].map(([key, value]) => [key, String(value)]),
+    );
+  };
+  const clearDraft = (kind: string) => {
+    delete formDrafts.current[draftKey(kind)];
+  };
   const busyRef = useRef(busy);
   busyRef.current = busy;
   const activeProjectId = data?.project?.id || "";
+
+  useEffect(() => {
+    if (dialog !== "project" || githubLoading) return;
+    const saved = formDrafts.current.project;
+    if (saved?.githubMode) setProjectRepositoryMode(saved.githubMode);
+    else if (!saved)
+      setProjectRepositoryMode(
+        githubProfile?.connected &&
+          !githubFailure &&
+          githubProfile.capabilities.repositoryCreate
+          ? "create"
+          : "local",
+      );
+  }, [dialog, githubLoading, githubProfile, githubFailure]);
 
   const reload = useCallback(
     async (signal?: AbortSignal) => {
       const serial = ++requestSerial.current;
       try {
-        const response = await fetch(
-          `/api/state${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
-          { signal, credentials: "same-origin", cache: "no-store" },
+        const next = await apiClient.get<State>(
+          `/state${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ""}`,
+          signal,
         );
-        if (!response.ok) {
-          const body = await response.json().catch(() => null);
-          throw new Error(
-            body?.error?.message ||
-              `Workspace could not load (${response.status}).`,
-          );
-        }
-        const next: State = await response.json();
         if (serial !== requestSerial.current || signal?.aborted) return;
         setData(next);
-        setError("");
+        setError(null);
         setLoading(false);
         setLastSync(new Date());
       } catch (problem) {
         if (!signal?.aborted && serial === requestSerial.current) {
-          setError(messageOf(problem));
+          setError(asFailure(problem, "Refresh workspace"));
           setLoading(false);
         }
       }
@@ -231,35 +292,41 @@ export default function App() {
   );
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/session", {
-      signal: controller.signal,
-      credentials: "same-origin",
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error(
-            "Reopen the local Agentdash page to establish this browser's operator session.",
-          );
-        const session = await response.json();
-        if (!controller.signal.aborted) setCsrf(session.csrfToken);
-      })
-      .catch((problem) => {
-        if (!controller.signal.aborted) setActionError(messageOf(problem));
-      });
-    return () => controller.abort();
+    let active = true;
+    void apiClient.session().catch((problem) => {
+      if (active) setActionError(asFailure(problem, "Connect browser session"));
+    });
+    return () => {
+      active = false;
+    };
   }, []);
   useEffect(() => {
     const controller = new AbortController();
+    let timer: number | undefined;
+    let running = false;
     setLoading(true);
-    void reload(controller.signal);
-    const interval = window.setInterval(() => {
-      if (!document.hidden) void reload(controller.signal);
-    }, 2500);
+    const poll = async () => {
+      if (running || controller.signal.aborted) return;
+      running = true;
+      try {
+        if (!document.hidden) await reload(controller.signal);
+      } finally {
+        running = false;
+        if (!controller.signal.aborted) timer = window.setTimeout(poll, 2500);
+      }
+    };
+    const visible = () => {
+      if (!document.hidden) {
+        window.clearTimeout(timer);
+        void poll();
+      }
+    };
+    void poll();
+    document.addEventListener("visibilitychange", visible);
     return () => {
       controller.abort();
-      window.clearInterval(interval);
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visible);
     };
   }, [reload]);
 
@@ -300,33 +367,23 @@ export default function App() {
   }, [dialog]);
 
   async function mutate(endpoint: string, body: unknown = {}) {
-    if (!csrf)
-      throw new Error(
-        "The local service has not authenticated this browser. Reopen the local Agentdash page.",
-      );
-    const response = await fetch(`/api${endpoint}`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", "X-AGCP-CSRF": csrf },
-      body: JSON.stringify(body),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok)
-      throw new Error(
-        result.error?.message || `Request failed (${response.status}).`,
-      );
-    return result;
+    try {
+      return await apiClient.post(endpoint, body);
+    } catch (problem) {
+      throw asFailure(problem, operationFor(endpoint));
+    }
   }
   async function perform(work: () => Promise<void>) {
     if (busy) return;
     setBusy(true);
-    setActionError("");
+    setActionError(null);
     setNotice("");
     try {
       await work();
       await reload();
     } catch (problem) {
-      setActionError(messageOf(problem));
+      setActionError(asFailure(problem, "Update workspace"));
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -335,16 +392,23 @@ export default function App() {
     setSelection(next);
     if (next.kind === "approval") setPinnedApprovalId(next.id);
     setTab("Activity");
+    setShowAllActivity(false);
+    requestAnimationFrame(() =>
+      document
+        .getElementById("inspector-heading")
+        ?.focus({ preventScroll: true }),
+    );
     setChat("");
     setReply("");
   }
   function changeProject(id: string) {
     setProjectId(id);
     setSelection(null);
+    setTreeFocusId(null);
     setPinnedApprovalId(null);
     setExcluded(new Set());
     setOutcomes([]);
-    setActionError("");
+    setActionError(null);
     setData(null);
   }
   const tasks = data?.tasks || [];
@@ -375,8 +439,25 @@ export default function App() {
       ? data?.personas.find((item) => item.id === selection.id)
       : undefined;
   const selectedSession = data?.sessions.find(
-    (item) => item.id === selectedTask?.sessionId,
+    (item) =>
+      item.id ===
+      (selectedApproval?.sessionId ||
+        selectedObservation?.sessionId ||
+        selectedTask?.sessionId),
   );
+  const sessionPersona = data?.personas.find(
+    (persona) =>
+      persona.id ===
+      (selectedSession?.personaVersionId || selectedTask?.personaId),
+  );
+  const historicalSession = Boolean(
+    selectedSession &&
+    selectedTask?.sessionId &&
+    selectedSession.id !== selectedTask.sessionId,
+  );
+  const originUnavailable =
+    !selectedSession ||
+    ["disconnected", "failed", "terminated"].includes(selectedSession.state);
   const pending = (data?.approvals || []).filter(
     (item) => item.state === "pending",
   );
@@ -460,11 +541,38 @@ export default function App() {
         `${artifact.logicalKey} v${artifact.version}: ${artifact.sourceCommit}`,
     )
     .join("; ");
-  const events = (data?.events || [])
-    .filter((event) => !selectedTask || event.taskId === selectedTask.id)
-    .slice(-60);
+  const sessionEvents = inspectionEvents(
+    data?.events || [],
+    selectedTask?.id,
+    selectedSession,
+    data?.sessions || [],
+    Boolean(selectedApproval || selectedObservation),
+    selectedApproval?.sessionId || selectedObservation?.sessionId,
+  );
+  const events = showAllActivity
+    ? [...sessionEvents]
+    : sessionEvents.slice(-60);
+  const sessionEvidence = data?.sessionEvidence?.find(
+    (item) => item.sessionId === selectedSession?.id,
+  );
+  const approvalDecisions = (data?.decisions || []).filter(
+    (item) =>
+      item.approvalId === selectedApproval?.id &&
+      item.sessionId === selectedApproval?.sessionId,
+  );
+  const approvalEvaluations = (data?.policyEvaluations || []).filter(
+    (item) => item.approvalId === selectedApproval?.id,
+  );
+  const approvalAudit = (data?.auditEntries || []).filter(
+    (item) =>
+      item.entityId === selectedApproval?.id ||
+      approvalDecisions.some((decision) => decision.id === item.entityId),
+  );
   const approvalEvent = data?.events.find(
-    (event) => event.id === selectedApproval?.sourceEventId,
+    (event) =>
+      event.id === selectedApproval?.sourceEventId &&
+      event.sessionId === selectedApproval.sessionId &&
+      event.taskId === selectedApproval.taskId,
   );
   if (approvalEvent && !events.some((event) => event.id === approvalEvent.id)) {
     events.unshift(approvalEvent);
@@ -491,17 +599,53 @@ export default function App() {
   async function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const mode = projectRepositoryMode;
     await perform(async () => {
       const result = await mutate("/projects", {
         name: form.get("name"),
         workspace: form.get("workspace"),
         objective: form.get("objective"),
-        githubRepo: form.get("githubRepo") || undefined,
+        createWorkspace: form.get("createWorkspace") === "on",
+        initializeGit: form.get("initializeGit") === "on",
+        githubRepo:
+          mode === "reference"
+            ? form.get("githubRepo") || undefined
+            : undefined,
       });
       const id = result.project?.id || result.id;
+      clearDraft("project");
       if (id) changeProject(id);
       setDialog(null);
-      setNotice("Project created. Launch the orchestrator when you are ready.");
+      setProjectRepositoryMode("local");
+      setNotice(
+        "Project created locally. Launch the orchestrator when you are ready.",
+      );
+      if (!id || !["link", "create"].includes(mode)) return;
+      const initial: InitialRepository = {
+        owner: String(form.get("githubOwner") || ""),
+        name: String(form.get("githubName") || ""),
+        visibility:
+          form.get("githubVisibility") === "public" ? "public" : "private",
+        repository: String(form.get("githubRepo") || ""),
+      };
+      setInitialRepository({ ...initial, projectId: id });
+      setNav("github");
+      if (mode === "link") {
+        await mutate(`/projects/${id}/github/link`, {
+          repository: initial.repository,
+        });
+        setNotice("Project created locally and repository access verified.");
+      } else {
+        await mutate(`/projects/${id}/github/proposals`, {
+          kind: "repository.create",
+          owner: initial.owner,
+          name: initial.name,
+          visibility: initial.visibility,
+        });
+        setNotice(
+          "Project created locally. Review its repository proposal before approving any remote creation.",
+        );
+      }
     });
   }
   async function submitTask(event: FormEvent<HTMLFormElement>) {
@@ -515,6 +659,7 @@ export default function App() {
         personaId: form.get("personaId"),
       });
       setDialog(null);
+      clearDraft("task");
       setNotice("Specialist task registered. Select it to launch its session.");
     });
   }
@@ -530,6 +675,7 @@ export default function App() {
         externalRef: form.get("externalRef") || undefined,
       });
       setDialog(null);
+      clearDraft("artifact");
       setNotice("Draft artifact registered. Review it before approval.");
     });
   }
@@ -629,6 +775,14 @@ export default function App() {
               Personas
               <span className="nav-count">{data?.personas.length || ""}</span>
             </button>
+            <button
+              aria-current={nav === "github" ? "page" : undefined}
+              className={nav === "github" ? "active" : ""}
+              onClick={() => setNav("github")}
+            >
+              <Icon name="layers" />
+              GitHub
+            </button>
           </nav>
           <div className="section-label">
             Project agents
@@ -641,10 +795,54 @@ export default function App() {
               <Icon name="plus" size={14} />
             </button>
           </div>
-          <div className="agent-tree">
+          <div
+            className="agent-tree"
+            role="tree"
+            aria-label="Registered project tasks"
+          >
             {tasks.map((task) => (
               <button
                 key={task.id}
+                role="treeitem"
+                aria-level={taskDepth(task) + 1}
+                aria-selected={selectedTask?.id === task.id}
+                aria-expanded={
+                  tasks.some((child) => child.parentTaskId === task.id)
+                    ? true
+                    : undefined
+                }
+                tabIndex={
+                  (treeFocusId || selectedTask?.id || tasks[0]?.id) === task.id
+                    ? 0
+                    : -1
+                }
+                onFocus={() => setTreeFocusId(task.id)}
+                onKeyDown={(event) => {
+                  const index = tasks.findIndex((item) => item.id === task.id);
+                  const next =
+                    event.key === "ArrowDown"
+                      ? tasks[index + 1]
+                      : event.key === "ArrowUp"
+                        ? tasks[index - 1]
+                        : event.key === "Home"
+                          ? tasks[0]
+                          : event.key === "End"
+                            ? tasks.at(-1)
+                            : event.key === "ArrowRight"
+                              ? tasks.find(
+                                  (item) => item.parentTaskId === task.id,
+                                )
+                              : event.key === "ArrowLeft"
+                                ? tasks.find(
+                                    (item) => item.id === task.parentTaskId,
+                                  )
+                                : undefined;
+                  if (next) {
+                    event.preventDefault();
+                    document.getElementById(`task-tree-${next.id}`)?.focus();
+                  }
+                }}
+                id={`task-tree-${task.id}`}
                 className={`agent-node ${selectedTask?.id === task.id ? "selected" : ""}`}
                 style={{ marginLeft: taskDepth(task) * 12 }}
                 onClick={() => {
@@ -700,14 +898,18 @@ export default function App() {
                   ? "Operations desk"
                   : nav === "artifacts"
                     ? "Artifact registry"
-                    : "Persona library"}
+                    : nav === "github"
+                      ? "Project repository"
+                      : "Persona library"}
               </h1>
               <p>
                 {nav === "desk"
                   ? "See what needs you. Keep every agent moving with context."
                   : nav === "artifacts"
                     ? "Versioned project knowledge, with a clear source and owner."
-                    : "The roles, working context, and boundaries behind each agent."}
+                    : nav === "github"
+                      ? "One profile connection. A reviewed repository and engineering record for each project."
+                      : "The roles, working context, and boundaries behind each agent."}
               </p>
             </div>
             <div className="heading-actions">
@@ -719,11 +921,21 @@ export default function App() {
                 <button
                   className="button"
                   onClick={() =>
-                    setDialog(nav === "artifacts" ? "artifact" : "task")
+                    setDialog(
+                      nav === "github"
+                        ? "settings"
+                        : nav === "artifacts"
+                          ? "artifact"
+                          : "task",
+                    )
                   }
                 >
                   <Icon name="plus" size={15} />
-                  {nav === "artifacts" ? "Register artifact" : "Add specialist"}
+                  {nav === "github"
+                    ? "Profile connection"
+                    : nav === "artifacts"
+                      ? "Register artifact"
+                      : "Add specialist"}
                 </button>
               )}
             </div>
@@ -803,8 +1015,8 @@ export default function App() {
           {error && (
             <div className="banner error" role="alert">
               <span>
-                <strong>Workspace connection interrupted.</strong> {error}{" "}
-                Decisions are disabled until state is current.
+                <strong>{error.operation} could not complete.</strong>{" "}
+                {error.message} Decisions are disabled until state is current.
               </span>
               <button className="text-button" onClick={() => void reload()}>
                 Retry
@@ -813,11 +1025,27 @@ export default function App() {
           )}
           {actionError && (
             <div className="banner error" role="alert">
-              <span>{actionError}</span>
+              <span>
+                <strong>{actionError.operation} could not complete.</strong>{" "}
+                {actionError.message}
+                {Object.entries(actionError.fieldErrors).map(
+                  ([field, message]) => (
+                    <span className="error-field" key={field}>
+                      {label(field)}: {message}
+                    </span>
+                  ),
+                )}
+                <small className="error-code">
+                  {actionError.code}
+                  {actionError.retryable
+                    ? " · You can try again after reviewing current state."
+                    : ""}
+                </small>
+              </span>
               <button
                 className="icon-button"
                 aria-label="Dismiss error"
-                onClick={() => setActionError("")}
+                onClick={() => setActionError(null)}
               >
                 <Icon name="close" size={15} />
               </button>
@@ -841,6 +1069,13 @@ export default function App() {
               <h2>Opening your workspace</h2>
               <p>Loading local project state…</p>
             </div>
+          ) : !data && error ? (
+            <Empty title="Workspace unavailable">
+              <p>{error.message}</p>
+              <button className="button" onClick={() => void reload()}>
+                Reconnect to local service
+              </button>
+            </Empty>
           ) : !data?.project ? (
             <div className="welcome">
               <div className="welcome-graphic">
@@ -877,6 +1112,22 @@ export default function App() {
                 </span>
               </div>
             </div>
+          ) : nav === "github" ? (
+            <GitHubProject
+              key={data.project.id}
+              api={apiClient}
+              busy={busy || Boolean(error)}
+              run={perform}
+              notify={setNotice}
+              project={data.project}
+              refreshWorkspace={reload}
+              openSettings={() => setDialog("settings")}
+              initialRepository={
+                initialRepository?.projectId === data.project.id
+                  ? initialRepository
+                  : undefined
+              }
+            />
           ) : (
             <div
               className={`content-grid ${nav !== "desk" ? "registry-layout" : ""}`}
@@ -1186,8 +1437,6 @@ export default function App() {
                         className={`registry-card ${selectedPersona?.id === item.id ? "chosen" : ""}`}
                         onClick={() => {
                           choose({ kind: "persona", id: item.id });
-                          setCloneName(`${item.name} copy`);
-                          setCloneInstructions(item.instructions);
                         }}
                       >
                         <span className="persona-symbol">
@@ -1229,7 +1478,9 @@ export default function App() {
                     <div className="eyebrow">
                       {selectedPersona.role} · Version {selectedPersona.version}
                     </div>
-                    <h2>{selectedPersona.name}</h2>
+                    <h2 id="inspector-heading" tabIndex={-1}>
+                      {selectedPersona.name}
+                    </h2>
                     <p className="inspector-description">
                       {selectedPersona.mandate}
                     </p>
@@ -1251,53 +1502,28 @@ export default function App() {
                     <pre className="content-text">
                       {selectedPersona.instructions}
                     </pre>
-                    <form
-                      className="clone-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void perform(async () => {
-                          await mutate("/personas", {
-                            sourceId: selectedPersona.id,
-                            name: cloneName,
-                            instructions: cloneInstructions,
-                          });
-                          setNotice(
-                            "New persona version created. Existing sessions keep their original version.",
-                          );
-                        });
-                      }}
-                    >
-                      <h3>Make this role your own</h3>
-                      <label>
-                        Name
-                        <input
-                          required
-                          value={cloneName}
-                          onChange={(event) => setCloneName(event.target.value)}
-                        />
-                      </label>
-                      <label>
-                        Instructions
-                        <textarea
-                          required
-                          rows={6}
-                          value={cloneInstructions}
-                          onChange={(event) =>
-                            setCloneInstructions(event.target.value)
-                          }
-                        />
-                      </label>
-                      <button className="button" disabled={busy}>
-                        Create a new version
-                      </button>
-                    </form>
+                    <PersonaMetadata
+                      persona={selectedPersona}
+                      skills={data.skills || []}
+                    />
+                    <PersonaEditor
+                      key={selectedPersona.id}
+                      source={selectedPersona}
+                      skills={data.skills || []}
+                      api={apiClient}
+                      busy={busy}
+                      run={perform}
+                      notify={setNotice}
+                    />
                   </>
                 ) : selectedArtifact ? (
                   <>
                     <div className="eyebrow">
                       Project context · Version {selectedArtifact.version}
                     </div>
-                    <h2>{selectedArtifact.logicalKey}</h2>
+                    <h2 id="inspector-heading" tabIndex={-1}>
+                      {selectedArtifact.logicalKey}
+                    </h2>
                     <p className="inspector-description">
                       {selectedArtifact.summary}
                     </p>
@@ -1310,6 +1536,14 @@ export default function App() {
                       <dd>{taskName(tasks, selectedArtifact.taskId)}</dd>
                       <dt>Source commit</dt>
                       <dd>{selectedArtifact.sourceCommit || "Not linked"}</dd>
+                      {selectedArtifact.sourceSessionId && (
+                        <>
+                          <dt>Original session</dt>
+                          <dd>
+                            <code>{selectedArtifact.sourceSessionId}</code>
+                          </dd>
+                        </>
+                      )}
                       {selectedArtifact.externalRef && (
                         <>
                           <dt>Reference</dt>
@@ -1331,10 +1565,42 @@ export default function App() {
                         </>
                       )}
                     </dl>
-                    <pre className="content-text">
+                    {selectedArtifact.inputArtifacts && (
+                      <section
+                        className="proposal-inputs"
+                        aria-label="Immutable artifact inputs"
+                      >
+                        <h3>Exact source inputs</h3>
+                        {selectedArtifact.inputArtifacts.map((input) => (
+                          <div className="pinned-input" key={input.id}>
+                            <strong>
+                              {input.logicalKey} · v{input.version}
+                            </strong>
+                            <code>{input.id}</code>
+                            <span>
+                              Source commit:{" "}
+                              <code>{input.sourceCommit || "Unavailable"}</code>
+                            </span>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    <pre className="content-text" tabIndex={0}>
                       {selectedArtifact.content ||
                         "This artifact has no retained content. Review its source reference and summary."}
                     </pre>
+                    {selectedArtifact.logicalKey === "issue_proposals" && (
+                      <ArtifactIssuePlan
+                        key={selectedArtifact.id}
+                        artifact={selectedArtifact}
+                        project={data.project}
+                        api={apiClient}
+                        busy={busy || Boolean(error)}
+                        run={perform}
+                        notify={setNotice}
+                        openProposals={() => setNav("github")}
+                      />
+                    )}
                     <div className="inspector-actions">
                       <button
                         className="button primary"
@@ -1376,7 +1642,9 @@ export default function App() {
                       )?.name || "Registered agent"}{" "}
                       · {label(selectedTask.state)}
                     </div>
-                    <h2>{selectedApproval?.summary || selectedTask.name}</h2>
+                    <h2 id="inspector-heading" tabIndex={-1}>
+                      {selectedApproval?.summary || selectedTask.name}
+                    </h2>
                     <p className="inspector-description">
                       {selectedApproval?.reason || selectedTask.objective}
                     </p>
@@ -1416,10 +1684,34 @@ export default function App() {
                           {label(selectedObservation.state)}
                         </span>
                         <p>{selectedObservation.summary}</p>
+                        <div className="observation-state">
+                          <Badge
+                            state={
+                              selectedObservation.terminalStatus || "unknown"
+                            }
+                          />
+                          <span>
+                            Advisory interpretation:{" "}
+                            {label(selectedObservation.classification)}
+                          </span>
+                        </div>
+                        {selectedObservation.classification === "ambiguous" && (
+                          <p className="form-note">
+                            This update needs interpretation. No decision or
+                            task acceptance is inferred from it.
+                          </p>
+                        )}
                         <small>
                           Classification is advisory. Replying does not approve
                           an action or accept completion.
                         </small>
+                        {(originUnavailable || historicalSession) && (
+                          <div className="evidence-gap">
+                            The originating session is unavailable for this
+                            update. You can mark it read; a reply will not be
+                            redirected into a replacement session.
+                          </div>
+                        )}
                         <form
                           onSubmit={(event) => {
                             event.preventDefault();
@@ -1443,6 +1735,7 @@ export default function App() {
                           </label>
                           <textarea
                             id="observation-reply"
+                            disabled={originUnavailable || historicalSession}
                             rows={3}
                             required
                             placeholder="Reply with the context they need…"
@@ -1452,7 +1745,12 @@ export default function App() {
                           <div className="form-inline-actions">
                             <button
                               className="button primary compact"
-                              disabled={busy || !reply.trim()}
+                              disabled={
+                                busy ||
+                                !reply.trim() ||
+                                originUnavailable ||
+                                historicalSession
+                              }
                             >
                               Send reply
                               <Icon name="arrow" size={13} />
@@ -1531,6 +1829,60 @@ export default function App() {
                     >
                       {tab === "Activity" ? (
                         <>
+                          {selectedSession &&
+                            !originUnavailable &&
+                            !historicalSession && (
+                              <div className="history-loader">
+                                <button
+                                  className="button compact"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void perform(async () => {
+                                      const result = await mutate(
+                                        `${taskPath}/history`,
+                                        { includeText: true },
+                                      );
+                                      setNotice(
+                                        `Native history loaded: ${result.entries} entries, ${result.gaps} evidence gaps. Former approvals remain invalid.`,
+                                      );
+                                    })
+                                  }
+                                >
+                                  Load native history for inspection
+                                </button>
+                                <small>
+                                  Loads supported transcript context into this
+                                  local view. Retention settings control
+                                  persistence. It does not restore old approval
+                                  authority.
+                                </small>
+                              </div>
+                            )}
+                          {selectedApproval && !approvalEvent && (
+                            <div className="evidence-gap" role="status">
+                              The approval's source event is unavailable in the
+                              retained timeline. Its action binding remains
+                              pinned above; no other session's event is
+                              substituted.
+                            </div>
+                          )}
+                          {sessionEvidence?.historyGaps.map((gap, index) => (
+                            <div className="evidence-gap" key={index}>
+                              {gap}
+                            </div>
+                          ))}
+                          {sessionEvents.length > 60 && (
+                            <button
+                              className="text-button"
+                              onClick={() =>
+                                setShowAllActivity(!showAllActivity)
+                              }
+                            >
+                              {showAllActivity
+                                ? "Show recent activity"
+                                : `Show all ${sessionEvents.length} available entries`}
+                            </button>
+                          )}
                           {events.length ? (
                             events.map((event) => (
                               <div
@@ -1563,7 +1915,7 @@ export default function App() {
                                     </span>
                                   )}
                                   {event.text && (
-                                    <pre className="event-text">
+                                    <pre className="event-text" tabIndex={0}>
                                       {event.text}
                                     </pre>
                                   )}
@@ -1625,13 +1977,29 @@ export default function App() {
                               )}
                           <div className="change-block">
                             <h3>Related Git references</h3>
+                            {(sessionEvidence?.gitBase ||
+                              sessionEvidence?.gitHead) && (
+                              <dl className="facts">
+                                <dt>Captured base</dt>
+                                <dd>
+                                  {sessionEvidence.gitBase || "Unavailable"}
+                                </dd>
+                                <dt>Captured head</dt>
+                                <dd>
+                                  {sessionEvidence.gitHead || "Unavailable"}
+                                </dd>
+                              </dl>
+                            )}
                             <p className="muted small">
                               {taskGitRefs ||
                                 "Unavailable: no task artifact source commit was captured."}
                             </p>
                             <p className="muted small">
-                              Artifact provenance is not a captured diff base or
-                              head. Diff base/head evidence is unavailable.
+                              Artifact provenance is separate from captured
+                              execution diff evidence.{" "}
+                              {(!sessionEvidence?.gitBase ||
+                                !sessionEvidence?.gitHead) &&
+                                "Complete diff base/head evidence is unavailable."}
                             </p>
                           </div>
                         </>
@@ -1645,17 +2013,15 @@ export default function App() {
                             </dd>
                             <dt>Objective</dt>
                             <dd>{selectedTask.objective}</dd>
-                            <dt>Persona</dt>
+                            <dt>Pinned persona</dt>
                             <dd>
-                              {data.personas.find(
-                                (persona) =>
-                                  persona.id === selectedTask.personaId,
-                              )?.name || selectedTask.personaId}{" "}
-                              · v
-                              {data.personas.find(
-                                (persona) =>
-                                  persona.id === selectedTask.personaId,
-                              )?.version ?? "unavailable"}
+                              {sessionPersona?.name || "Unavailable"} · v
+                              {sessionPersona?.version ?? "unavailable"}
+                            </dd>
+                            <dt>Context digest</dt>
+                            <dd>
+                              {selectedSession?.contextDigest ||
+                                "Unavailable: this session has no captured context digest."}
                             </dd>
                             <dt>Parent</dt>
                             <dd>
@@ -1677,11 +2043,40 @@ export default function App() {
                             <dd>Human approval only</dd>
                             <dt>Sandbox</dt>
                             <dd>
-                              Exact current sandbox evidence is unavailable in
-                              this inspector. Native approval does not grant
-                              persistent session permissions.
+                              {sessionEvidence?.sandboxSummary ||
+                                "Exact current sandbox evidence is unavailable in this inspector."}{" "}
+                              Native approval does not grant persistent session
+                              permissions.
                             </dd>
                           </dl>
+                          <h3 className="subheading">
+                            Pinned session artifact inputs
+                          </h3>
+                          {selectedSession?.artifactInputs?.length ? (
+                            selectedSession.artifactInputs.map((input) => (
+                              <div className="pinned-input" key={input.id}>
+                                <strong>
+                                  {input.logicalKey} · v{input.version}
+                                </strong>
+                                <code>
+                                  {input.sourceCommit ||
+                                    "No source commit captured"}
+                                </code>
+                                {!data.artifacts.some(
+                                  (artifact) => artifact.id === input.id,
+                                ) && (
+                                  <span className="evidence-gap">
+                                    Referenced artifact content is unavailable.
+                                  </span>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="muted small">
+                              No artifact input references were captured for
+                              this session.
+                            </p>
+                          )}
                           <h3 className="subheading">
                             Available project context
                           </h3>
@@ -1754,13 +2149,93 @@ export default function App() {
                                 </p>
                               </div>
                               <div>
-                                <strong>Resolver ancestry evidence</strong>
+                                <strong>Recorded policy checks</strong>
+                                {approvalEvaluations.length ? (
+                                  approvalEvaluations.map((check) => (
+                                    <div
+                                      className="recorded-check"
+                                      key={check.id}
+                                    >
+                                      <Badge state={check.outcome} />
+                                      <strong>{label(check.check)}</strong>
+                                      <p>{check.summary}</p>
+                                      <time>
+                                        {new Date(
+                                          check.checkedAt,
+                                        ).toLocaleString()}
+                                      </time>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <p>
+                                    No recorded policy evaluations are available
+                                    for this approval.
+                                  </p>
+                                )}
+                              </div>
+                              <div>
+                                <strong>Recorded human decisions</strong>
+                                {approvalDecisions.length ? (
+                                  approvalDecisions.map((decision) => (
+                                    <div
+                                      className="recorded-check"
+                                      key={decision.id}
+                                    >
+                                      <strong>
+                                        {decision.resolver} ·{" "}
+                                        {label(decision.decision)}
+                                      </strong>
+                                      <p>
+                                        Delivery: {label(decision.delivery)} ·
+                                        Policy {decision.policySnapshotId}
+                                      </p>
+                                      <time>
+                                        {new Date(
+                                          decision.issuedAt,
+                                        ).toLocaleString()}
+                                      </time>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <p>
+                                    No human decision record is available for
+                                    this approval.
+                                  </p>
+                                )}
                                 <p>
-                                  Detailed decision records and policy
-                                  evaluation results are not exposed in this
-                                  inspector. No delegated judgments are recorded
-                                  here.
+                                  Only recorded resolver evidence is shown. No
+                                  delegated judgment is inferred.
                                 </p>
+                              </div>
+                              <div>
+                                <strong>Audit provenance</strong>
+                                {approvalAudit.length ? (
+                                  approvalAudit.map((entry) => (
+                                    <div
+                                      className="recorded-check"
+                                      key={entry.id}
+                                    >
+                                      <strong>
+                                        {entry.actor} · {entry.operation}
+                                      </strong>
+                                      <p>
+                                        Revision {entry.revision} · Event{" "}
+                                        {entry.sequence}
+                                      </p>
+                                      <code>{entry.hash}</code>
+                                      <time>
+                                        {new Date(
+                                          entry.timestamp,
+                                        ).toLocaleString()}
+                                      </time>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <p>
+                                    No scoped audit entries were returned for
+                                    this approval.
+                                  </p>
+                                )}
                               </div>
                             </>
                           ) : (
@@ -1804,82 +2279,128 @@ export default function App() {
                     ) : (
                       <>
                         <div className="task-controls">
-                          {!selectedSession ||
-                          ["terminated", "failed", "disconnected"].includes(
-                            selectedSession.state,
-                          ) ? (
-                            <button
-                              className="button primary"
-                              disabled={
-                                busy ||
-                                !data.status.codexAvailable ||
-                                selectedTask.state === "completed"
-                              }
-                              onClick={() =>
-                                void perform(async () => {
-                                  await mutate(`${taskPath}/start`);
-                                  setNotice(
-                                    "Registered session launch requested.",
-                                  );
-                                })
-                              }
-                            >
-                              <Icon name="activity" size={15} />
-                              Launch agent
-                            </button>
+                          {historicalSession || originUnavailable ? (
+                            <>
+                              <p className="form-note">
+                                This view belongs to an earlier session. Actions
+                                will not be redirected into its replacement.
+                              </p>
+                              <button
+                                className="button"
+                                onClick={() =>
+                                  choose({ kind: "task", id: selectedTask.id })
+                                }
+                              >
+                                Inspect current task session
+                              </button>
+                            </>
                           ) : (
                             <>
+                              {!selectedSession ||
+                              ["terminated", "failed", "disconnected"].includes(
+                                selectedSession.state,
+                              ) ? (
+                                <>
+                                  {selectedSession?.bindingRef &&
+                                    !historicalSession && (
+                                      <button
+                                        className="button primary"
+                                        disabled={
+                                          busy ||
+                                          !data.status.codexAvailable ||
+                                          selectedTask.state === "completed"
+                                        }
+                                        onClick={() =>
+                                          void perform(async () => {
+                                            await mutate(`${taskPath}/resume`);
+                                            setNotice(
+                                              "Conversation recovered into a fresh registered session. Previous approvals stay invalid; send a message to continue.",
+                                            );
+                                          })
+                                        }
+                                      >
+                                        Resume conversation
+                                      </button>
+                                    )}
+                                  <button
+                                    className="button primary"
+                                    disabled={
+                                      busy ||
+                                      !data.status.codexAvailable ||
+                                      selectedTask.state === "completed"
+                                    }
+                                    onClick={() =>
+                                      void perform(async () => {
+                                        await mutate(`${taskPath}/start`);
+                                        setNotice(
+                                          "Registered session launch requested.",
+                                        );
+                                      })
+                                    }
+                                  >
+                                    <Icon name="activity" size={15} />
+                                    {selectedSession
+                                      ? "Start fresh session"
+                                      : "Launch agent"}
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="button compact"
+                                    disabled={
+                                      busy ||
+                                      !["running", "waiting_approval"].includes(
+                                        selectedSession.state,
+                                      )
+                                    }
+                                    onClick={() =>
+                                      void perform(async () => {
+                                        await mutate(`${taskPath}/interrupt`);
+                                      })
+                                    }
+                                  >
+                                    Interrupt
+                                  </button>
+                                  <button
+                                    className="button compact deny"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void perform(async () => {
+                                        await mutate(`${taskPath}/terminate`);
+                                      })
+                                    }
+                                  >
+                                    End session
+                                  </button>
+                                </>
+                              )}
+                              {selectedTask.state === "review" && (
+                                <button
+                                  className="button"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void perform(async () => {
+                                      await mutate(`${taskPath}/accept`);
+                                      setNotice(
+                                        "Task completion accepted by you.",
+                                      );
+                                    })
+                                  }
+                                >
+                                  <Icon name="check" size={14} />
+                                  Accept completion
+                                </button>
+                              )}
                               <button
-                                className="button compact"
-                                disabled={
-                                  busy ||
-                                  !["running", "waiting_approval"].includes(
-                                    selectedSession.state,
-                                  )
-                                }
-                                onClick={() =>
-                                  void perform(async () => {
-                                    await mutate(`${taskPath}/interrupt`);
-                                  })
-                                }
+                                className="text-button"
+                                onClick={() => setDialog("task")}
                               >
-                                Interrupt
-                              </button>
-                              <button
-                                className="button compact deny"
-                                disabled={busy}
-                                onClick={() =>
-                                  void perform(async () => {
-                                    await mutate(`${taskPath}/terminate`);
-                                  })
-                                }
-                              >
-                                End session
+                                <Icon name="plus" size={14} />
+                                Add specialist
                               </button>
                             </>
                           )}
-                          {selectedTask.state === "review" && (
-                            <button
-                              className="button"
-                              disabled={busy}
-                              onClick={() =>
-                                void perform(async () => {
-                                  await mutate(`${taskPath}/accept`);
-                                  setNotice("Task completion accepted by you.");
-                                })
-                              }
-                            >
-                              <Icon name="check" size={14} />
-                              Accept completion
-                            </button>
-                          )}
-                          <button
-                            className="text-button"
-                            onClick={() => setDialog("task")}
-                          >
-                            <Icon name="plus" size={14} />
-                            Add specialist
-                          </button>
                         </div>
                         {!data.status.codexAvailable && (
                           <p className="inline-error">
@@ -1914,6 +2435,8 @@ export default function App() {
                             value={chat}
                             onChange={(event) => setChat(event.target.value)}
                             disabled={
+                              historicalSession ||
+                              originUnavailable ||
                               !selectedSession ||
                               ["disconnected", "terminated", "failed"].includes(
                                 selectedSession.state,
@@ -1927,6 +2450,8 @@ export default function App() {
                               disabled={
                                 busy ||
                                 !chat.trim() ||
+                                historicalSession ||
+                                originUnavailable ||
                                 !selectedSession ||
                                 [
                                   "disconnected",
@@ -2024,7 +2549,7 @@ export default function App() {
                     ? "Add a specialist"
                     : dialog === "artifact"
                       ? "Register an artifact"
-                      : "Workspace settings"}
+                      : "Profile & workspace settings"}
               </h2>
               <button
                 className="icon-button"
@@ -2037,11 +2562,42 @@ export default function App() {
             </div>
             {actionError && (
               <div className="inline-error" role="alert">
-                {actionError}
+                <strong>{actionError.operation} could not complete.</strong>
+                <p>{actionError.message}</p>
+                {Object.entries(actionError.fieldErrors).map(
+                  ([field, message]) => (
+                    <p key={field}>
+                      <button
+                        type="button"
+                        className="text-button field-error-link"
+                        onClick={() =>
+                          modalRef.current
+                            ?.querySelector<HTMLElement>(
+                              `[name="${CSS.escape(field)}"]`,
+                            )
+                            ?.focus()
+                        }
+                      >
+                        <strong>{label(field)}:</strong> {message}
+                      </button>
+                    </p>
+                  ),
+                )}
+                <small>
+                  {actionError.code}
+                  {actionError.retryable
+                    ? " · Review current state, then try again."
+                    : ""}
+                </small>
               </div>
             )}
             {dialog === "project" ? (
-              <form onSubmit={(event) => void submitProject(event)}>
+              <form
+                onChange={(event) =>
+                  rememberDraft("project", event.currentTarget)
+                }
+                onSubmit={(event) => void submitProject(event)}
+              >
                 <p className="modal-description">
                   Start with an objective and a local workspace. Your
                   orchestrator launches when you choose.
@@ -2050,9 +2606,27 @@ export default function App() {
                   Project name
                   <input
                     name="name"
+                    defaultValue={draft("project", "name")}
                     required
-                    maxLength={120}
+                    maxLength={100}
                     placeholder="My next project"
+                    onBlur={(event) => {
+                      const form = event.currentTarget.form;
+                      const repositoryInput =
+                        form?.elements.namedItem("githubName");
+                      if (
+                        form &&
+                        repositoryInput instanceof HTMLInputElement &&
+                        !repositoryInput.value
+                      ) {
+                        repositoryInput.value = event.currentTarget.value
+                          .toLowerCase()
+                          .replace(/[^a-z0-9._-]+/g, "-")
+                          .replace(/^-+|-+$/g, "")
+                          .slice(0, 100);
+                        rememberDraft("project", form);
+                      }
+                    }}
                     autoFocus
                   />
                 </label>
@@ -2060,32 +2634,179 @@ export default function App() {
                   Local workspace
                   <input
                     name="workspace"
+                    defaultValue={draft("project", "workspace")}
                     required
                     placeholder="/absolute/path/to/project"
-                    pattern="/.*"
+                    pattern="(?:/|~/).*"
                   />
                   <small>
-                    Use an existing local folder. Agents work within this
+                    Use an absolute path or ~/folder. Agents work within this
                     project boundary.
+                  </small>
+                </label>
+                <label className="checkbox-option">
+                  <input
+                    type="checkbox"
+                    name="createWorkspace"
+                    defaultChecked={
+                      draft("project", "createWorkspace") === "on"
+                    }
+                  />
+                  Create this folder if missing
+                </label>
+                <label className="checkbox-option">
+                  <input
+                    type="checkbox"
+                    name="initializeGit"
+                    defaultChecked={draft("project", "initializeGit") === "on"}
+                  />
+                  Initialize Git if needed{" "}
+                  <small>
+                    Creates an empty initial commit; existing files remain
+                    unstaged.
                   </small>
                 </label>
                 <label>
                   Project objective
                   <textarea
                     name="objective"
+                    defaultValue={draft("project", "objective")}
                     required
                     rows={3}
                     placeholder="What should the team build, and how will you know it's done?"
                   />
                 </label>
-                <label>
-                  GitHub reference <span className="optional">optional</span>
-                  <input name="githubRepo" placeholder="owner/repository" />
+                <fieldset className="project-repository-setup">
+                  <legend>Project repository</legend>
+                  <label htmlFor="new-project-repository-mode">
+                    Setup mode
+                  </label>
+                  <select
+                    id="new-project-repository-mode"
+                    name="githubMode"
+                    value={projectRepositoryMode}
+                    onChange={(event) =>
+                      setProjectRepositoryMode(event.target.value)
+                    }
+                  >
+                    <option value="local">Local project only</option>
+                    <option value="reference">
+                      Keep an unverified repository reference
+                    </option>
+                    {githubProfile?.connected && (
+                      <>
+                        <option value="link">
+                          Verify and link an existing repository
+                        </option>
+                        <option
+                          value="create"
+                          disabled={
+                            !githubProfile.capabilities.repositoryCreate
+                          }
+                        >
+                          Prepare a new repository for approval
+                        </option>
+                      </>
+                    )}
+                  </select>
                   <small>
-                    Links the project reference. This does not create or change
-                    a repository.
+                    {githubLoading
+                      ? "Checking profile connection…"
+                      : githubProfile?.connected
+                        ? `Profile connected as ${githubProfile.identity?.login}. This project chooses its own repository.`
+                        : githubFailure
+                          ? "GitHub connection status is unavailable. Local setup still works."
+                          : "GitHub is not connected. Connect in profile settings to verify links or prepare repository creation."}
                   </small>
-                </label>
+                  {!githubProfile?.connected && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => setDialog("settings")}
+                    >
+                      Open profile connection settings
+                    </button>
+                  )}
+                  {(projectRepositoryMode === "reference" ||
+                    projectRepositoryMode === "link") && (
+                    <label>
+                      Repository
+                      <input
+                        name="githubRepo"
+                        defaultValue={draft("project", "githubRepo")}
+                        required
+                        placeholder="owner/repository"
+                      />
+                      <small>
+                        {projectRepositoryMode === "reference"
+                          ? "Stored as a local reference only; account access is not verified."
+                          : "Current profile account access is checked before linking."}
+                      </small>
+                    </label>
+                  )}
+                  {projectRepositoryMode === "create" && (
+                    <>
+                      <label>
+                        Repository owner
+                        <select
+                          name="githubOwner"
+                          required
+                          defaultValue={draft(
+                            "project",
+                            "githubOwner",
+                            githubProfile?.identity?.login || "",
+                          )}
+                        >
+                          <option value="" disabled>
+                            Choose an authorized owner
+                          </option>
+                          {githubProfile?.owners.map((owner) => (
+                            <option key={owner.id} value={owner.login}>
+                              {owner.login}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Repository name
+                        <input
+                          name="githubName"
+                          required
+                          defaultValue={draft(
+                            "project",
+                            "githubName",
+                            draft("project", "name")
+                              .toLowerCase()
+                              .replace(/[^a-z0-9._-]+/g, "-")
+                              .replace(/^-+|-+$/g, "")
+                              .slice(0, 100),
+                          )}
+                          maxLength={100}
+                          placeholder="project-name"
+                        />
+                      </label>
+                      <label>
+                        Visibility
+                        <select
+                          name="githubVisibility"
+                          defaultValue={draft(
+                            "project",
+                            "githubVisibility",
+                            "private",
+                          )}
+                        >
+                          <option value="private">Private</option>
+                          <option value="public">Public</option>
+                        </select>
+                      </label>
+                      <p className="form-note">
+                        The project is created locally first. Repository
+                        creation waits for your approval of the exact account,
+                        owner, name and visibility.
+                      </p>
+                    </>
+                  )}
+                </fieldset>
                 <div className="modal-footer">
                   <button
                     type="button"
@@ -2094,14 +2815,28 @@ export default function App() {
                   >
                     Cancel
                   </button>
-                  <button className="button primary" disabled={busy}>
-                    Create project
+                  <button
+                    className="button primary"
+                    disabled={
+                      busy ||
+                      (["link", "create"].includes(projectRepositoryMode) &&
+                        (githubLoading || !githubProfile?.connected))
+                    }
+                  >
+                    {projectRepositoryMode === "create"
+                      ? "Create project & prepare proposal"
+                      : projectRepositoryMode === "link"
+                        ? "Create project & verify link"
+                        : "Create local project"}
                     <Icon name="arrow" size={14} />
                   </button>
                 </div>
               </form>
             ) : dialog === "task" ? (
-              <form onSubmit={(event) => void submitTask(event)}>
+              <form
+                onChange={(event) => rememberDraft("task", event.currentTarget)}
+                onSubmit={(event) => void submitTask(event)}
+              >
                 <p className="modal-description">
                   Give a specialist a clear objective and a place in the agent
                   tree.
@@ -2110,8 +2845,9 @@ export default function App() {
                   Task name
                   <input
                     name="name"
+                    defaultValue={draft("task", "name")}
                     required
-                    maxLength={120}
+                    maxLength={100}
                     placeholder="Review the architecture"
                     autoFocus
                   />
@@ -2121,7 +2857,11 @@ export default function App() {
                   <select
                     name="parentTaskId"
                     required
-                    defaultValue={selectedTask?.id || data?.project?.rootTaskId}
+                    defaultValue={draft(
+                      "task",
+                      "parentTaskId",
+                      selectedTask?.id || data?.project?.rootTaskId || "",
+                    )}
                   >
                     {tasks.map((task) => (
                       <option key={task.id} value={task.id}>
@@ -2135,7 +2875,11 @@ export default function App() {
                   <select
                     name="personaId"
                     required
-                    defaultValue={selectedPersona?.id || ""}
+                    defaultValue={draft(
+                      "task",
+                      "personaId",
+                      selectedPersona?.id || "",
+                    )}
                   >
                     <option value="" disabled>
                       Choose a specialist persona
@@ -2151,6 +2895,7 @@ export default function App() {
                   Objective
                   <textarea
                     name="objective"
+                    defaultValue={draft("task", "objective")}
                     required
                     rows={4}
                     placeholder="Define scope, expected output, and acceptance criteria."
@@ -2175,7 +2920,12 @@ export default function App() {
                 </div>
               </form>
             ) : dialog === "artifact" ? (
-              <form onSubmit={(event) => void submitArtifact(event)}>
+              <form
+                onChange={(event) =>
+                  rememberDraft("artifact", event.currentTarget)
+                }
+                onSubmit={(event) => void submitArtifact(event)}
+              >
                 <p className="modal-description">
                   Add a versioned piece of project context. New artifacts start
                   as drafts.
@@ -2184,6 +2934,7 @@ export default function App() {
                   Logical key
                   <input
                     name="logicalKey"
+                    defaultValue={draft("artifact", "logicalKey")}
                     required
                     placeholder="current_roadmap"
                     autoFocus
@@ -2194,7 +2945,11 @@ export default function App() {
                   <select
                     name="taskId"
                     required
-                    defaultValue={selectedTask?.id || data?.project?.rootTaskId}
+                    defaultValue={draft(
+                      "artifact",
+                      "taskId",
+                      selectedTask?.id || data?.project?.rootTaskId || "",
+                    )}
                   >
                     {tasks.map((task) => (
                       <option key={task.id} value={task.id}>
@@ -2205,12 +2960,18 @@ export default function App() {
                 </label>
                 <label>
                   Summary
-                  <textarea name="summary" required rows={2} />
+                  <textarea
+                    name="summary"
+                    defaultValue={draft("artifact", "summary")}
+                    required
+                    rows={2}
+                  />
                 </label>
                 <label>
                   Content <span className="optional">optional</span>
                   <textarea
                     name="content"
+                    defaultValue={draft("artifact", "content")}
                     rows={5}
                     placeholder="Project context retained locally…"
                   />
@@ -2219,6 +2980,7 @@ export default function App() {
                   Source reference <span className="optional">optional</span>
                   <input
                     name="externalRef"
+                    defaultValue={draft("artifact", "externalRef")}
                     placeholder="https://github.com/owner/repository/…"
                   />
                 </label>
@@ -2240,6 +3002,12 @@ export default function App() {
                 <p className="modal-description">
                   Your governance workspace is stored on this computer.
                 </p>
+                <GitHubSettings
+                  api={apiClient}
+                  busy={busy}
+                  run={perform}
+                  notify={setNotice}
+                />
                 <div className="setting-row">
                   <div>
                     <strong>Retain session content locally</strong>

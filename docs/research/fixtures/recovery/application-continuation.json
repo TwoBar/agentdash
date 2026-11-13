@@ -1,0 +1,30 @@
+{
+  "actualHttpStartTerminateResumeHistory": true,
+  "freshSessionIdentity": true,
+  "formerApprovalDisconnected": true,
+  "formerDecisionRejected": true,
+  "historyStableAndNonAuthoritative": true,
+  "explicitHistoryGaps": 2,
+  "freshNativeApprovalRequired": true,
+  "freshSignatureValid": true,
+  "oldSentinel": false,
+  "freshSentinel": true,
+  "cliVersion": "0.163.0-alpha.11.1",
+  "resultPassed": true,
+  "decisionDeliverySent": true,
+  "finalTaskInReview": true,
+  "minimalRetentionAllEventTextNull": true,
+  "auditValid": true,
+  "continuation": {
+    "questionRoutedToOriginalParent": true,
+    "automaticParentReview": true,
+    "actualParentGetChildStatus": true,
+    "actualParentReplyToolWithObservation": true,
+    "repliedObservation": true,
+    "distinctChildTurnCompleted": true,
+    "taskAccepted": false,
+    "nativeApprovalsGranted": 0,
+    "usedNativeParentMcp": true,
+    "childTaskInReview": true
+  }
+}

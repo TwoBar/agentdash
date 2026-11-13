@@ -1,0 +1,19 @@
+{
+  "actualHttpStartTerminateResumeHistory": true,
+  "freshSessionIdentity": true,
+  "formerApprovalDisconnected": true,
+  "formerDecisionRejected": true,
+  "historyStableAndNonAuthoritative": true,
+  "explicitHistoryGaps": 2,
+  "freshNativeApprovalRequired": true,
+  "freshSignatureValid": true,
+  "oldSentinel": false,
+  "freshSentinel": true,
+  "cliVersion": "0.163.0-alpha.11.1",
+  "resultPassed": true,
+  "decisionDeliverySent": true,
+  "finalTaskInReview": true,
+  "minimalRetentionAllEventTextNull": true,
+  "auditValid": true,
+  "actualServiceRestart": true
+}

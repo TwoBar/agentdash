@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { actionDigest, assertApprovalTransition, assertSessionTransition, assertTaskTransition, canonicalize, freshEntity } from './index.js';
+import { actionDigest, assertApprovalTransition, assertSessionTransition, assertTaskTransition, canonicalize, freshEntity, validatePersonaMetadata, validateSkillVersion, type Persona, type SkillVersion } from './index.js';
 
 test('canonical JSON sorts nested properties while preserving arrays and exact strings', () => {
   assert.equal(canonicalize({ z: [3, { b: 1, a: 'line\ntext' }], a: -0 }), '{"a":0,"z":[3,{"a":"line\\ntext","b":1}]}');
@@ -50,4 +50,28 @@ test('fresh entity IDs are unique and server timestamps/revisions are initialize
   assert.equal(first.schemaVersion, 1);
   assert.equal(first.createdAt, first.updatedAt);
   assert.throws(() => freshEntity('../unsafe'));
+});
+
+function richPersona(): Persona {
+  return { ...freshEntity('per'), name: 'Synthetic persona', role: 'research', mandate: 'Investigate the bounded synthetic question', instructions: 'Report evidence', requiredArtifacts: [], skills: ['Evidence reporting'], authority: 'Human decisions only', version: 1,
+    authorityTemplate: { mode: 'human-only', capabilities: ['get_task_context','report_status'] }, toolScope: ['get_task_context','report_status'], dataScope: ['current-project'], escalationRules: ['Escalate missing context to the operator'], expectedOutputs: ['Evidence summary'], completionContract: 'A completion claim requires separate human acceptance', skillVersionIds: ['skill-synthetic-v1'] };
+}
+test('rich personas require complete mandate/scope/escalation/completion metadata and cannot grant operator authority', () => {
+  const persona = richPersona(); assert.doesNotThrow(() => validatePersonaMetadata(persona));
+  for (const field of ['authorityTemplate','toolScope','dataScope','escalationRules','expectedOutputs','completionContract','skillVersionIds'] as const) {
+    const missing = { ...persona }; delete missing[field]; assert.throws(() => validatePersonaMetadata(missing));
+  }
+  assert.throws(() => validatePersonaMetadata({ ...persona, authorityTemplate: { mode: 'delegated' as never, capabilities: [] } }), /authority/);
+  assert.throws(() => validatePersonaMetadata({ ...persona, authorityTemplate: { mode: 'human-only', capabilities: ['approve_action'] } }), /authority/);
+  assert.throws(() => validatePersonaMetadata({ ...persona, toolScope: ['accept_task'] }), /tool scope/);
+  assert.throws(() => validatePersonaMetadata({ ...persona, toolScope: ['get_task_context'] }), /tool scope/);
+});
+
+test('skill versions require procedures, JSON schemas and supported coordination capability requirements', () => {
+  const skill: SkillVersion = { ...freshEntity('skl'), skillId: 'synthetic_skill', name: 'Synthetic evidence', version: 1, procedure: 'Inspect inputs and report bounded evidence', requiredCapabilities: ['report_status'], inputSchema: { type: 'object' }, outputSchema: { type: 'object' } };
+  assert.doesNotThrow(() => validateSkillVersion(skill));
+  assert.throws(() => validateSkillVersion({ ...skill, procedure: '' }), /procedure/);
+  assert.throws(() => validateSkillVersion({ ...skill, requiredCapabilities: ['approve_all'] }), /capability/);
+  assert.throws(() => validateSkillVersion({ ...skill, inputSchema: [] as never }), /schemas/);
+  assert.throws(() => validateSkillVersion({ ...skill, outputSchema: { unsafe: undefined } }), /Unsupported canonical/);
 });

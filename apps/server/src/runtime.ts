@@ -15,13 +15,23 @@ import {
   type Observation,
   type Persona,
   type Collection,
+  type Decision,
+  type SkillVersion,
 } from "../../../packages/domain/src/index.js";
 import { Store } from "../../../packages/store/src/index.js";
 import {
   CodexConnector,
   type ConnectorEvent,
+  type ConnectorHistory,
 } from "../../../packages/codex/src/index.js";
 import { Governance } from "./governance.js";
+import { classifyTurn } from "./observations.js";
+import { resolveArtifact } from "./artifact-policy.js";
+import { prepareWorkspace } from "./workspace-setup.js";
+import { GitHubService } from "./github.js";
+import { IssuePlanning } from "./issue-planning.js";
+import { mcpOutputSchemas } from "./mcp-contracts.js";
+import type { GitHubProvider } from "./github-provider.js";
 import {
   AppError,
   Capabilities,
@@ -107,6 +117,9 @@ export interface RuntimeOptions {
   connector?: CodexConnector;
   bootId?: string;
   now?: () => number;
+  githubProvider?: GitHubProvider;
+  parentReviewTimeoutMs?: number;
+  maxParentReviews?: number;
 }
 export class Runtime {
   readonly bootId: string;
@@ -114,7 +127,10 @@ export class Runtime {
   readonly connector: CodexConnector;
   readonly governance: Governance;
   readonly capabilities: Capabilities;
+  readonly github: GitHubService;
+  readonly issuePlanning: IssuePlanning;
   readonly liveText = new Map<string, string>();
+  readonly liveApprovalCommands = new Map<string, string>();
   readonly liveTurns = new Map<string, string>();
   readonly liveChanges = new Map<string, string>();
   readonly activeBindings = new Map<string, string>();
@@ -122,6 +138,7 @@ export class Runtime {
   readonly currentTurns = new Map<string, string>();
   readonly reviewTimers = new Set<ReturnType<typeof setTimeout>>();
   readonly starting = new Set<string>();
+  readonly messaging = new Set<string>();
   retention: "minimal" | "local-content" = "minimal";
   origin = "http://127.0.0.1:4317";
   probeStatus = {
@@ -134,10 +151,12 @@ export class Runtime {
     this.bootId = options.bootId ?? randomUUID();
     this.store =
       options.store ?? new Store(options.dataDirectory + "/governance.sqlite");
+    this.issuePlanning = new IssuePlanning(this.store, options.now);
     this.capabilities = new Capabilities(this.bootId, options.now);
     this.connector =
       options.connector ??
       new CodexConnector({
+        stateDirectory: options.dataDirectory + "/connector",
         onEvent: (event) => {
           try {
             this.onConnectorEvent(event);
@@ -159,6 +178,12 @@ export class Runtime {
       async (approval) => this.validatePinnedContext(approval),
     );
     this.initialize();
+    this.github = new GitHubService(
+      this.store,
+      this.bootId,
+      options.githubProvider,
+      options.now,
+    );
   }
   initialize(): void {
     requireCondition(
@@ -167,9 +192,46 @@ export class Runtime {
       "Local governance integrity verification failed; no sessions will start.",
       409,
     );
+    const skillIds = ["skill_scope_check_v1", "skill_evidence_reporting_v1"];
+    for (const [index, name, procedure] of [
+      [
+        0,
+        "Scope check",
+        "Retrieve authenticated task context. Check the assigned objective, tool scope and required artifact versions. Escalate missing or stale inputs; never infer authority from messages.",
+      ],
+      [
+        1,
+        "Evidence reporting",
+        "Report the concrete change, verification evidence and remaining limits. Register outputs with provenance. Completion is a claim requiring separate human acceptance.",
+      ],
+    ] as const)
+      if (!this.store.get<SkillVersion>("skills", skillIds[index]))
+        this.store.create<SkillVersion>("skills", {
+          ...freshEntity("skl"),
+          id: skillIds[index],
+          skillId: index === 0 ? "scope-check" : "evidence-reporting",
+          name,
+          version: 1,
+          procedure,
+          requiredCapabilities: [
+            index === 0 ? "get_task_context" : "report_status",
+          ],
+          inputSchema: { type: "object" },
+          outputSchema: { type: "object" },
+        });
     for (const [role, name, mandate, required] of personaSeeds) {
-      const id = `persona_${role}_v1`;
-      if (!this.store.get<Persona>("personas", id))
+      const versions = this.store
+        .list<Persona>("personas")
+        .filter((persona) => persona.role === role);
+      const nextVersion =
+        Math.max(0, ...versions.map((persona) => persona.version)) + 1;
+      const id = `persona_${role}_v${nextVersion}`;
+      if (
+        !versions.some(
+          (persona) =>
+            persona.completionContract && persona.skillVersionIds?.length,
+        )
+      )
         this.store.create<Persona>("personas", {
           ...freshEntity("per"),
           id,
@@ -183,7 +245,25 @@ export class Runtime {
           skills: ["scope-check", "evidence-reporting"],
           authority:
             "Request scoped children and recommend decisions; no operator approval authority.",
-          version: 1,
+          version: nextVersion,
+          authorityTemplate: {
+            mode: "human-only",
+            capabilities: [...coordinationTools],
+          },
+          toolScope: [...coordinationTools],
+          dataScope: [
+            "Assigned project artifacts and registered direct children only",
+          ],
+          escalationRules: [
+            "Missing authority or context requires parent or human review",
+            "Native command approval always requires the operator",
+          ],
+          expectedOutputs: [
+            "Provenance-bearing artifacts and verification evidence",
+          ],
+          completionContract:
+            "Report a completion claim with evidence; only the human operator can accept it.",
+          skillVersionIds: skillIds,
         });
     }
     this.store.transaction(() => {
@@ -215,6 +295,18 @@ export class Runtime {
             state: "blocked",
           });
     });
+  }
+  coordinationTools(): readonly string[] {
+    return coordinationTools;
+  }
+  refreshActiveCapabilities(): void {
+    for (const session of this.store.list<Session>("sessions"))
+      if (
+        session.bootId === this.bootId &&
+        ["running", "waiting_approval"].includes(session.state) &&
+        this.connector.isSessionAlive?.(session.id)
+      )
+        this.capabilities.renewSession(session.id);
   }
   async probe(): Promise<void> {
     this.probeStatus = await this.connector.probe();
@@ -277,8 +369,14 @@ export class Runtime {
     workspace: string;
     objective: string;
     githubRepo?: string;
+    createWorkspace?: boolean;
+    initializeGit?: boolean;
   }): Promise<Project> {
-    const workspace = await validatedWorkspace(input.workspace);
+    const workspace = await prepareWorkspace(
+      input.workspace,
+      this.options.dataDirectory,
+      input,
+    );
     const dataDirectory = await realpath(this.options.dataDirectory);
     requireCondition(
       workspace !== dataDirectory &&
@@ -313,7 +411,10 @@ export class Runtime {
           parentTaskId: null,
           name: "Project orchestrator",
           objective: input.objective,
-          personaId: "persona_orchestrator_v1",
+          personaId: this.store
+            .list<Persona>("personas")
+            .filter((persona) => persona.role === "orchestrator")
+            .sort((a, b) => b.version - a.version)[0].id,
           state: "ready",
           sessionId: null,
           workspace,
@@ -389,26 +490,25 @@ export class Runtime {
     const project = this.must<Project>("projects", task.projectId);
     const head = await sourceCommit(task.workspace || project.workspace);
     return persona.requiredArtifacts.map((key) => {
-      const candidates = this.store
-        .list<Artifact>("artifacts", task.projectId)
-        .filter(
-          (a) =>
-            a.logicalKey === key &&
-            a.status === "approved" &&
-            (!a.expiresAt || Date.parse(a.expiresAt) > Date.now()) &&
-            (key !== "codebase_map" || (head && a.sourceCommit === head)),
-        )
-        .sort((a, b) => b.version - a.version);
+      const resolution = resolveArtifact(
+        this.store.list<Artifact>("artifacts", task.projectId),
+        {
+          projectId: task.projectId,
+          taskId: task.id,
+          logicalKey: key,
+          sourceCommit: head,
+        },
+      );
       requireCondition(
-        candidates[0],
+        resolution.ok,
         "context_blocked",
         `Required artifact ${key} is missing, unapproved, stale, or unavailable for this source commit.`,
         409,
       );
-      return candidates[0];
+      return resolution.artifact;
     });
   }
-  async validatePinnedContext(approval: Approval): Promise<void> {
+  async validatePinnedContext(approval: Pick<Approval, "sessionId" | "taskId" | "projectId">): Promise<void> {
     const session = this.must<Session>(
       "sessions",
       approval.sessionId,
@@ -433,6 +533,8 @@ export class Runtime {
           artifact.projectId === task.projectId &&
           artifact.version === input.version &&
           artifact.status === "approved" &&
+          (artifact.readableByTaskIds === undefined ||
+            artifact.readableByTaskIds.includes(task.id)) &&
           (!artifact.expiresAt ||
             Date.parse(artifact.expiresAt) > Date.now()) &&
           (key !== "codebase_map" ||
@@ -449,6 +551,7 @@ export class Runtime {
     projectId: string,
     taskId: string,
     model?: string,
+    mode: "fresh" | "resume" = "fresh",
   ): Promise<Session> {
     let task = this.must<Task>("tasks", taskId, projectId);
     requireCondition(
@@ -473,6 +576,13 @@ export class Runtime {
       "This task already has a registered live session.",
       409,
     );
+    if (mode === "resume")
+      requireCondition(
+        previous?.bindingRef,
+        "resume_unavailable",
+        "This session has no supported recovery binding. Start a fresh registered session instead.",
+        409,
+      );
     const active = this.store
       .list<Session>("sessions", projectId)
       .filter((s) =>
@@ -502,12 +612,12 @@ export class Runtime {
       let artifacts = await this.requiredArtifacts(task);
       const project = this.must<Project>("projects", projectId);
       const workspace = task.parentTaskId
-        ? task.workspace ||
-          (await isolatedWorktree(
+        ? await isolatedWorktree(
             project.workspace,
             this.options.dataDirectory,
             task.id,
-          ))
+            task.workspace,
+          )
         : project.workspace;
       task = this.patchTask(task, { workspace, state: "running" });
       artifacts = await this.requiredArtifacts(task);
@@ -520,6 +630,7 @@ export class Runtime {
         bootId: this.bootId,
         error: null,
         bindingRef: null,
+        ...(mode === "resume" && previous ? { resumedFrom: previous.id } : {}),
       });
       task = this.patchTask(task, { sessionId: session.id });
       const token = this.capabilities.issue({
@@ -528,6 +639,16 @@ export class Runtime {
         sessionId: session.id,
       });
       const persona = this.must<Persona>("personas", task.personaId);
+      const skills = (persona.skillVersionIds ?? []).map((id) =>
+        this.must<SkillVersion>("skills", id),
+      );
+      const allowedTools = (persona.toolScope ?? [...coordinationTools]).filter(
+        (tool) =>
+          (
+            persona.authorityTemplate?.capabilities ?? [...coordinationTools]
+          ).includes(tool),
+      );
+      requireCondition(skills.every(skill => skill.requiredCapabilities.every(capability => allowedTools.includes(capability))), "skill_scope_mismatch", "An attached skill needs a tool outside this persona's allowed scope. Choose compatible skills or revise the persona before starting.", 409);
       const context = {
         identity: {
           projectId,
@@ -541,6 +662,15 @@ export class Runtime {
           mandate: persona.mandate,
           instructions: persona.instructions,
           skills: persona.skills,
+          toolScope: allowedTools,
+          dataScope: persona.dataScope ?? ["Assigned project only"],
+          escalationRules: persona.escalationRules ?? [
+            "Ask parent or operator",
+          ],
+          expectedOutputs: persona.expectedOutputs ?? ["Evidence"],
+          completionContract:
+            persona.completionContract ?? "Human acceptance required",
+          skillVersions: skills,
         },
         task: { objective: task.objective },
         authority: {
@@ -570,6 +700,7 @@ export class Runtime {
         {
           contextDigest: digest(context),
           personaVersionId: persona.id,
+          skillVersionIds: skills.map((skill) => skill.id),
           artifactInputs: artifacts.map((a) => ({
             id: a.id,
             logicalKey: a.logicalKey,
@@ -583,8 +714,9 @@ export class Runtime {
         "context.compiled",
         `Deterministic context compiled: ${digest(context)}. Persona ${persona.name} v${persona.version}.`,
       );
-      const binding = await this.connector.startSession({
+      const startOptions = {
         sessionId: session.id,
+        scope: { projectId, taskId },
         cwd: workspace,
         instructions: JSON.stringify(context),
         model,
@@ -595,17 +727,24 @@ export class Runtime {
             bearer_token_env_var: "AGCP_SESSION_CAPABILITY",
             enabled: true,
             required: true,
-            enabled_tools: [...coordinationTools],
+            enabled_tools: allowedTools,
             default_tools_approval_mode: "prompt",
             tools: Object.fromEntries(
-              coordinationTools.map((name) => [
-                name,
-                { approval_mode: "approve" },
-              ]),
+              allowedTools.map((name) => [name, { approval_mode: "approve" }]),
             ),
           },
         },
-      });
+      };
+      const binding =
+        mode === "resume" && previous?.bindingRef
+          ? await this.connector.resumeSession({
+              ...startOptions,
+              bindingRef: previous.bindingRef,
+              previousSessionId: previous.id,
+            })
+          : await this.connector.startSession(startOptions);
+      if ("history" in binding)
+        this.mergeHistory(task, binding.history as ConnectorHistory);
       const latest = this.must<Session>("sessions", session.id, projectId);
       if (latest.state === "starting")
         this.store.update<Session>("sessions", latest.id, latest.revision, {
@@ -616,11 +755,27 @@ export class Runtime {
         this.store.update<Session>("sessions", latest.id, latest.revision, {
           bindingRef: binding.bindingRef,
         });
-      await this.sendTaskMessage(projectId, taskId, task.objective, "operator");
+      if (mode === "fresh")
+        await this.sendTaskMessage(
+          projectId,
+          taskId,
+          task.objective,
+          "operator",
+        );
+      else {
+        const resumedTask = this.must<Task>("tasks", task.id, projectId);
+        this.patchTask(resumedTask, { state: "review" });
+        this.event(
+          resumedTask,
+          "session.resumed",
+          "Conversation recovered into a fresh registered session. Former approvals remain invalid. Send a message to continue.",
+        );
+      }
       return this.must<Session>("sessions", session.id, projectId);
     } catch (error) {
       if (session) {
         this.capabilities.revokeSession(session.id);
+        this.issuePlanning.forgetSession(session.id);
         try {
           await this.connector.terminate(session.id);
         } catch {
@@ -641,10 +796,93 @@ export class Runtime {
       const current = this.must<Task>("tasks", taskId, projectId);
       if (!["completed", "cancelled"].includes(current.state))
         this.patchTask(current, { state: "blocked" });
-      throw error;
+      if (error instanceof AppError) throw error;
+      const safeRecoveryMessages = new Set([
+        "No verified native recovery binding is available; start a fresh registered session.",
+        "Native recovery metadata is missing or cannot be verified; start a fresh registered session.",
+        "The former native process is still running or its ownership is uncertain. Stop its original service before resuming.",
+        "Scoped native recovery is unavailable for legacy sessions.",
+        "Recovery binding does not match the original project, task, session, workspace or supported version.",
+      ]);
+      const known = error instanceof Error && safeRecoveryMessages.has(error.message) ? error.message : null;
+      throw new AppError(mode === "resume" ? "codex_resume_failed" : "codex_start_failed", known ?? (mode === "resume"
+        ? "Codex could not resume this session safely. Start a fresh session if its recovery binding is unavailable; inspect the original session before retrying."
+        : "Codex could not start this task. Check that Codex CLI is signed in and the selected model is available, then retry from this task."), 409, { retryable: false, operation: mode === "resume" ? "Resume session" : "Start session" });
     } finally {
       this.starting.delete(taskId);
     }
+  }
+  private mergeHistory(task: Task, history: ConnectorHistory): void {
+    for (const entry of history.entries) {
+      const origin = this.store.get<Session>("sessions", entry.originSessionId);
+      requireCondition(
+        origin &&
+          origin.projectId === task.projectId &&
+          origin.taskId === task.id,
+        "history_scope_mismatch",
+        "Recovered history belongs to a different task/session.",
+        409,
+      );
+      this.event(
+        task,
+        entry.type,
+        entry.summary,
+        entry.text ?? null,
+        entry.sourceId,
+        origin.id,
+      );
+    }
+    for (const gap of history.gaps) {
+      const origin = this.must<Session>(
+        "sessions",
+        gap.originSessionId,
+        task.projectId,
+      );
+      requireCondition(
+        origin.taskId === task.id,
+        "history_scope_mismatch",
+        "Recovered history does not belong to this task.",
+        409,
+      );
+      this.event(
+        task,
+        "history.gap",
+        gap.summary,
+        null,
+        gap.sourceId,
+        origin.id,
+      );
+    }
+  }
+  async hydrateHistory(
+    projectId: string,
+    taskId: string,
+    includeText = false,
+  ): Promise<{ complete: boolean; entries: number; gaps: number }> {
+    const task = this.must<Task>("tasks", taskId, projectId);
+    requireCondition(
+      task.sessionId,
+      "no_session",
+      "Start or resume the registered session before loading its history.",
+      409,
+    );
+    const session = this.must<Session>("sessions", task.sessionId, projectId);
+    requireCondition(
+      session.bootId === this.bootId &&
+        ["idle", "running", "waiting_approval"].includes(session.state),
+      "history_unavailable",
+      "Resume this session or start a fresh session before loading native history.",
+      409,
+    );
+    const history = await this.connector.getHistory(session.id, {
+      includeText,
+    });
+    this.mergeHistory(task, history);
+    return {
+      complete: history.complete,
+      entries: history.entries.length,
+      gaps: history.gaps.length,
+    };
   }
   async sendTaskMessage(
     projectId: string,
@@ -672,14 +910,47 @@ export class Runtime {
       "This session is busy, paused, or disconnected. Wait for its current turn or interrupt it.",
       409,
     );
-    await this.requiredArtifacts(task);
-    this.event(
-      task,
-      "message.user",
-      `${actor === "operator" ? "Operator" : "Parent"} sent a message to this registered session.`,
-      text,
+    requireCondition(
+      !this.messaging.has(session.id),
+      "session_busy",
+      "A message is already being sent to this session. Wait for the current operation.",
+      409,
     );
-    return this.connector.sendMessage(session.id, text);
+    this.messaging.add(session.id);
+    try {
+      if (this.connector.isSessionAlive?.(session.id))
+        requireCondition(
+          this.capabilities.renewSession(session.id, true),
+          "session_lease_expired",
+          "This session reached its eight-hour capability limit. Terminate it and resume into a fresh registered session.",
+          409,
+        );
+      await this.requiredArtifacts({ ...task, personaId: session.personaVersionId || task.personaId });
+      await this.validatePinnedContext({ projectId, taskId, sessionId: session.id });
+      this.event(
+        task,
+        "message.user",
+        `${actor === "operator" ? "Operator" : "Parent " + actor} sent a message to this registered session.`,
+        text,
+      );
+      return await this.connector.sendMessage(session.id, text);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError("message_delivery_uncertain", "Message delivery was not confirmed. Refresh this session’s activity before sending again; the message will not be retried automatically.", 409, { retryable: false, operation: "Send message" });
+    } finally {
+      this.messaging.delete(session.id);
+    }
+  }
+  async resolveArtifactForSession(principal: CapabilityPrincipal, logicalKey: string): Promise<Artifact> {
+    const task = this.validateCapability(principal);
+    const project = this.must<Project>('projects', principal.projectId);
+    const head = await sourceCommit(task.workspace || project.workspace);
+    this.validateCapability(principal);
+    const resolution = resolveArtifact(this.store.list<Artifact>('artifacts', principal.projectId), { projectId: principal.projectId, taskId: task.id, logicalKey, sourceCommit: head, now: this.options.now?.() });
+    requireCondition(resolution.ok, 'artifact_unavailable', 'No approved, current, readable artifact is available.', 409);
+    const artifact = mcpOutputSchemas.resolve_artifact.parse(resolution.artifact);
+    this.issuePlanning.recordRead(principal, artifact);
+    return artifact;
   }
   async registerArtifact(
     projectId: string,
@@ -691,12 +962,19 @@ export class Runtime {
       externalRef?: string;
       sourceCommit?: string;
     },
+    principal?: CapabilityPrincipal,
   ): Promise<Artifact> {
     const owner = this.must<Task>("tasks", taskId, projectId);
     const project = this.must<Project>("projects", projectId);
     const commit =
-      input.sourceCommit ||
+      (input.logicalKey !== 'issue_proposals' && input.sourceCommit) ||
       (await sourceCommit(owner.workspace || project.workspace));
+    let planning: { content: string; inputArtifacts: Artifact['inputArtifacts'] } | undefined;
+    if (input.logicalKey === 'issue_proposals') {
+      requireCondition(principal && principal.projectId === projectId && principal.taskId === taskId, 'issue_inputs_unread', 'Issue proposals must be published by the registered session that resolved their source inputs.', 409);
+      this.validateCapability(principal);
+      planning = this.issuePlanning.draft(principal, commit, input.content ? redact(input.content) : null);
+    }
     const version =
       Math.max(
         0,
@@ -713,10 +991,11 @@ export class Runtime {
       version,
       status: "draft",
       summary: redact(input.summary),
-      content: input.content ? redact(input.content) : null,
+      content: planning?.content ?? (input.content ? redact(input.content) : null),
       externalRef: input.externalRef || null,
       sourceCommit: commit,
       expiresAt: null,
+      ...(planning ? { inputArtifacts: planning.inputArtifacts, sourceSessionId: principal!.sessionId } : {}),
     });
   }
   state(projectId?: string): Record<string, unknown> {
@@ -727,7 +1006,8 @@ export class Runtime {
       project ? this.store.list<T>(collection, project.id) : [];
     const approvals = scoped<Approval>("approvals").map((a) => {
       const pending = this.governance.pending.get(a.id);
-      return pending ? { ...a, command: redact(pending.command) } : a;
+      const command = pending ? redact(pending.command) : this.liveApprovalCommands.get(a.id);
+      return command ? { ...a, command } : a;
     });
     const events = scoped<ActivityEvent>("events")
       .slice(-300)
@@ -745,6 +1025,28 @@ export class Runtime {
         summary: this.liveText.get(o.id) ?? o.summary,
       })),
       personas: this.store.list<Persona>("personas"),
+      skills: this.store.list<SkillVersion>("skills"),
+      decisions: scoped<Decision>("decisions"),
+      policyEvaluations: scoped<Decision>("decisions").flatMap((d) =>
+        (d.policyChecks ?? []).map((check, index) => ({
+          ...check,
+          id: `${d.id}:${index}`,
+          approvalId: d.approvalId,
+        })),
+      ),
+      auditEntries: project ? this.store.audit(project.id).slice(-300) : [],
+      sessionEvidence: scoped<Session>("sessions").map((session) => ({
+        sessionId: session.id,
+        sandboxSummary:
+          "Owned Codex session initialized read-only with human native command approval. A worktree isolates source edits, not the OS.",
+        historyGaps: scoped<ActivityEvent>("events")
+          .filter(
+            (event) =>
+              event.sessionId === session.id && event.type === "history.gap",
+          )
+          .map((event) => event.summary),
+      })),
+      github: this.github.profile(),
       changes: Object.fromEntries(
         [...this.liveChanges].filter(([sessionId]) =>
           scoped<Session>("sessions").some((s) => s.id === sessionId),
@@ -761,7 +1063,7 @@ export class Runtime {
           "Native command approvals only. Permission, network-group and file-change approval categories are unavailable.",
           "Signing keys and pending native callbacks are not recovered after a service restart.",
           "Minimal retention keeps live message content in memory. Codex retains its own local session history independently.",
-          "GitHub integration currently links repositories; credentialed writes require a later governed integration.",
+          "GitHub uses an explicitly connected OS-keyring-backed CLI account. External writes require exact human-approved proposals.",
         ],
       },
       audit: this.store.verifyAudit(),
@@ -798,6 +1100,7 @@ export class Runtime {
     ) {
       this.governance.invalidateSession(session.id);
       this.capabilities.revokeSession(session.id);
+      this.issuePlanning.forgetSession(session.id);
       if (
         ["starting", "idle", "running", "waiting_approval"].includes(
           session.state,
@@ -873,6 +1176,8 @@ export class Runtime {
         bootId: this.bootId,
         reason: null,
       });
+      this.liveApprovalCommands.set(approval.id, redact(incoming.command));
+      if (this.liveApprovalCommands.size > 1000) this.liveApprovalCommands.delete(this.liveApprovalCommands.keys().next().value!);
       this.governance.addPending(approval.id, {
         key: incoming.key,
         sessionId: session.id,
@@ -948,16 +1253,11 @@ export class Runtime {
               o.sessionId === session.id && o.sourceTurnId === event.turnId,
           )
       ) {
-        const classification =
-          /\?|\b(which|clarify|need your|please choose)\b/i.test(text)
-            ? "awaiting_input"
-            : /\b(blocked|cannot proceed|missing|failed)\b/i.test(text)
-              ? "blocker"
-              : /\b(done|completed|finished|implemented)\b/i.test(text)
-                ? "completion_claim"
-                : text
-                  ? "progress_update"
-                  : "ambiguous";
+        const interpretation = classifyTurn({
+          text,
+          terminalStatus: event.terminalStatus,
+        });
+        const classification = interpretation.classification;
         const observation = this.store.create<Observation>("observations", {
           ...freshEntity("obs"),
           projectId: task.projectId,
@@ -966,6 +1266,7 @@ export class Runtime {
           sessionId: session.id,
           sourceTurnId: event.turnId,
           classification,
+          terminalStatus: interpretation.terminalStatus,
           summary:
             this.retention === "local-content"
               ? redact(text.slice(0, 500))
@@ -978,9 +1279,7 @@ export class Runtime {
         if (text) this.liveText.set(observation.id, redact(text));
         if (
           task.parentTaskId &&
-          ["awaiting_input", "blocker", "completion_claim"].includes(
-            classification,
-          )
+          (interpretation.alertParent || classification === "completion_claim")
         )
           void this.scheduleParent(observation).catch(() => {});
       }
@@ -1005,7 +1304,12 @@ export class Runtime {
       ? this.store.get<Session>("sessions", parent.sessionId)
       : undefined;
     const reviews = this.parentReviews.get(parent.id) ?? 0;
-    if (!session || session.state !== "idle" || reviews >= 3) {
+    if (
+      !session ||
+      session.bootId !== this.bootId ||
+      session.state !== "idle" ||
+      reviews >= Math.min(3, this.options.maxParentReviews ?? 3)
+    ) {
       this.event(
         parent,
         "parent.escalation",
@@ -1020,19 +1324,25 @@ export class Runtime {
       `A registered child ended a turn. Task ${observation.taskId}; observation ${observation.id}; advisory label ${observation.classification}. Retrieve get_child_status/get_task_context and use reply_to_child if useful. Do not authorize native actions or accept the child automatically. Summary: ${this.liveText.get(observation.id) ?? observation.summary}`,
       "parent-router",
     );
-    const timer = setTimeout(() => {
-      this.reviewTimers.delete(timer);
-      if (this.#closed || this.currentTurns.get(session.id) !== review.turnId)
-        return;
-      this.event(
-        parent,
-        "parent.review_timeout",
-        "Parent review deadline reached; human follow-up is required.",
-      );
-      void this.connector
-        .interrupt(session.id)
-        .catch(() => this.handleIngestionFailure(session.id));
-    }, 60_000);
+    const timer = setTimeout(
+      () => {
+        this.reviewTimers.delete(timer);
+        if (this.#closed || this.currentTurns.get(session.id) !== review.turnId)
+          return;
+        this.event(
+          parent,
+          "parent.review_timeout",
+          "Parent review deadline reached; human follow-up is required.",
+        );
+        void this.connector
+          .interrupt(session.id)
+          .catch(() => this.handleIngestionFailure(session.id));
+      },
+      Math.max(
+        1,
+        Math.min(60_000, this.options.parentReviewTimeoutMs ?? 60_000),
+      ),
+    );
     timer.unref();
     this.reviewTimers.add(timer);
   }
@@ -1041,7 +1351,7 @@ export class Runtime {
     id: string,
     text: string,
     actor = "operator",
-  ): Promise<void> {
+  ): Promise<{ turnId: string }> {
     const observation = this.must<Observation>("observations", id, projectId);
     const task = this.must<Task>("tasks", observation.taskId, projectId);
     const session = this.must<Session>(
@@ -1058,7 +1368,12 @@ export class Runtime {
       "The originating session is unavailable for this reply. Open the current task to continue separately.",
       409,
     );
-    await this.sendTaskMessage(projectId, observation.taskId, text, actor);
+    const response = await this.sendTaskMessage(
+      projectId,
+      observation.taskId,
+      text,
+      actor,
+    );
     this.store.update<Observation>(
       "observations",
       id,
@@ -1066,6 +1381,7 @@ export class Runtime {
       { state: "replied" },
       actor,
     );
+    return response;
   }
   validateCapability(principal: CapabilityPrincipal): Task {
     const session = this.must<Session>(
@@ -1081,11 +1397,45 @@ export class Runtime {
       "This capability is no longer bound to a live registered session.",
       403,
     );
-    return this.must<Task>("tasks", principal.taskId, principal.projectId);
+    const task = this.must<Task>(
+      "tasks",
+      principal.taskId,
+      principal.projectId,
+    );
+    requireCondition(
+      task.sessionId === session.id,
+      "inactive_session",
+      "The capability belongs to a former task session.",
+      403,
+    );
+    return task;
+  }
+  validateTool(principal: CapabilityPrincipal, name: string): Task {
+    const task = this.validateCapability(principal);
+    const session = this.must<Session>(
+      "sessions",
+      principal.sessionId,
+      principal.projectId,
+    );
+    const persona = this.must<Persona>(
+      "personas",
+      session.personaVersionId || task.personaId,
+    );
+    requireCondition(
+      (persona.toolScope ?? [...coordinationTools]).includes(name) &&
+        (
+          persona.authorityTemplate?.capabilities ?? [...coordinationTools]
+        ).includes(name),
+      "tool_out_of_scope",
+      "This tool is outside the pinned persona scope.",
+      403,
+    );
+    return task;
   }
   async handleIngestionFailure(sessionId: string): Promise<void> {
     this.governance.invalidateSession(sessionId);
     this.capabilities.revokeSession(sessionId);
+    this.issuePlanning.forgetSession(sessionId);
     try {
       await this.connector.terminate(sessionId);
     } catch {

@@ -2,6 +2,8 @@
 
 Verified 2026-11-13. This is an experimental implementation checkpoint, not MVP release acceptance. The v0.1 PRD and technical specification remain the scope baseline, interpreted by ADRs 0001–0003.
 
+This report preserves the first-build checkpoint. The [recovery/profile increment](recovery-profile-increment.md) records subsequent fixes and current remaining gates; the table below is historical.
+
 ## Integrated result
 
 Operations desk now drives a real same-origin local service, a persistent SQLite graph and AGCP-owned Codex sessions. It supports notification-level Approve/Deny and counted group approval with exclusions, separate signed decisions, task trees, nine initial personas, draft/approved artifacts, an approval-anchored inspector and advisory parent inboxes. Scoped MCP can register isolated child sessions. Agent messages cannot approve actions or accept task completion.

@@ -2,10 +2,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import {
-  assertApprovalTransition, assertSessionTransition, assertTaskTransition,
+  assertApprovalTransition, assertSessionTransition, assertTaskTransition, assertGitHubProposalTransition, validatePersonaMetadata, validateSkillVersion,
   canonicalize, collections, digest, freshEntity,
   type Approval, type Artifact, type AuditEntry, type Collection, type Decision,
-  type Entity, type Observation, type Project, type Session, type Task,
+  type Entity, type Observation, type Project, type Session, type Task, type Persona, type SkillVersion, type ProfileConnection, type GitHubProposal,
 } from '../../domain/src/index.js';
 
 const migrationSQL = `
@@ -45,6 +45,14 @@ INSERT INTO source_keys(collection,source_key,entity_id)
 SELECT 'artifacts', json_array(json_extract(payload,'$.projectId'),json_extract(payload,'$.logicalKey'),json_extract(payload,'$.version')), id
 FROM entities WHERE collection='artifacts';
 `;
+const registryVersionKeysSQL = `
+INSERT INTO source_keys(collection,source_key,entity_id)
+SELECT 'personas', json_array(json_extract(payload,'$.role'),json_extract(payload,'$.version')), id
+FROM entities WHERE collection='personas';
+INSERT INTO source_keys(collection,source_key,entity_id)
+SELECT 'skills', json_array(COALESCE(json_extract(payload,'$.skillId'),json_extract(payload,'$.name')),json_extract(payload,'$.version')), id
+FROM entities WHERE collection='skills';
+`;
 
 export class Store {
   readonly #db: DatabaseSync;
@@ -68,7 +76,7 @@ export class Store {
   #migrate(): void {
     this.#db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT');
     const recorded = this.#db.prepare('SELECT version, checksum FROM schema_migrations ORDER BY version').all() as { version: number; checksum: string }[];
-    const migrations = [{ version: 1, sql: migrationSQL }, { version: 2, sql: artifactVersionKeysSQL }];
+    const migrations = [{ version: 1, sql: migrationSQL }, { version: 2, sql: artifactVersionKeysSQL }, { version: 3, sql: registryVersionKeysSQL }];
     for (const row of recorded) {
       const migration = migrations.find(item => item.version === row.version);
       if (!migration) throw new Error(`Unsupported database migration version: ${row.version}`);
@@ -94,11 +102,28 @@ export class Store {
   #validate(collection: Collection, entity: Entity): void {
     if (!entity.id || typeof entity.id !== 'string' || !Number.isSafeInteger(entity.revision) || entity.revision < 1 || !Number.isFinite(Date.parse(entity.createdAt)) || !Number.isFinite(Date.parse(entity.updatedAt))) throw new Error('Invalid entity identity/revision/timestamps');
     if (entity.schemaVersion !== undefined && entity.schemaVersion !== 1) throw new Error('Unsupported entity schema version');
-    if (collection === 'personas') return;
+    if (collection === 'personas') {
+      const persona = entity as Persona;
+      if (['authorityTemplate', 'toolScope', 'dataScope', 'escalationRules', 'expectedOutputs', 'completionContract', 'skillVersionIds'].some(key => Object.hasOwn(persona, key))) {
+        validatePersonaMetadata(persona);
+        for (const id of persona.skillVersionIds!) if (!this.get<SkillVersion>('skills', id)) throw new Error('Persona references a missing skill version');
+      }
+      return;
+    }
+    if (collection === 'skills') { validateSkillVersion(entity as SkillVersion); return; }
+    if (collection === 'connections') {
+      const connection = entity as ProfileConnection;
+      if (Object.keys(connection).some(key => !['id','revision','createdAt','updatedAt','schemaVersion','provider','login','accountId','state','capabilities','owners','credentialProvider'].includes(key)) || Object.keys(connection.capabilities ?? {}).some(key => !['read','repositoryCreate','issueCreate','administration','release'].includes(key))) throw new Error('Unsupported GitHub connection metadata');
+      if (connection.provider !== 'gh-cli' || connection.credentialProvider !== 'gh-cli' || !connection.login || !Number.isSafeInteger(connection.accountId) || connection.accountId < 1 || !['connected', 'disconnected'].includes(connection.state)) throw new Error('Invalid GitHub connection identity');
+      if (!connection.capabilities || ['read','repositoryCreate','issueCreate','administration','release'].some(key => typeof connection.capabilities[key as keyof ProfileConnection['capabilities']] !== 'boolean') || !Array.isArray(connection.owners) || connection.owners.some(owner => !owner || Object.keys(owner).some(key => !['login','id'].includes(key)) || !owner.login || !Number.isSafeInteger(owner.id) || owner.id < 1)) throw new Error('Invalid GitHub connection capability/owner metadata');
+      return;
+    }
     if (collection === 'projects') {
       const project = entity as Project;
       const rootTask = this.get<Task>('tasks', project.rootTaskId);
       if (rootTask && (rootTask.projectId !== project.id || rootTask.parentTaskId !== null)) throw new Error('Invalid project root task');
+      if (project.githubConnectionId != null && !this.get<ProfileConnection>('connections', project.githubConnectionId)) throw new Error('Invalid project GitHub connection');
+      if (project.githubRepositoryId != null && (!Number.isSafeInteger(project.githubRepositoryId) || project.githubRepositoryId < 1)) throw new Error('Invalid GitHub repository identity');
       return;
     }
     const projectId = this.#projectId(collection, entity);
@@ -115,7 +140,27 @@ export class Store {
       if (!session || session.projectId !== projectId || (taskId && session.taskId !== taskId)) throw new Error('Invalid session binding');
       return session;
     };
-    if (collection === 'tasks') {
+    if (collection === 'githubProposals') {
+      const proposal = entity as GitHubProposal;
+      if (!proposal.taskId) throw new Error('Missing task identity');
+      taskReference(proposal.taskId);
+      if (!this.get<ProfileConnection>('connections', proposal.connectionId)) throw new Error('Invalid GitHub proposal connection');
+      const project = this.get<Project>('projects', proposal.projectId)!;
+      if (!this.get<GitHubProposal>('githubProposals', proposal.id) && project.githubConnectionId != null && project.githubConnectionId !== proposal.connectionId) throw new Error('GitHub proposal connection does not match project binding');
+      if (!['repository.create','issue.create'].includes(proposal.kind) || !proposal.bootId || !/^sha256:[a-f0-9]{64}$/.test(proposal.actionDigest) || !Number.isFinite(Date.parse(proposal.expiresAt)) || !proposal.payload || typeof proposal.payload !== 'object' || Array.isArray(proposal.payload)) throw new Error('Invalid GitHub proposal action binding');
+      assertGitHubProposalTransition(proposal.state, proposal.state);
+      if (proposal.resolver !== undefined && proposal.resolver !== 'human') throw new Error('GitHub proposal resolver must be human');
+      if (proposal.decision !== undefined && !['approve','deny'].includes(proposal.decision)) throw new Error('Invalid GitHub proposal decision');
+      if (proposal.decidedAt !== undefined && !Number.isFinite(Date.parse(proposal.decidedAt))) throw new Error('Invalid GitHub proposal decision timestamp');
+      for (const input of proposal.artifactInputs ?? []) {
+        const artifact = this.get<Artifact>('artifacts', input.id);
+        if (!artifact || artifact.projectId !== proposal.projectId || artifact.logicalKey !== input.logicalKey || artifact.version !== input.version || artifact.sourceCommit !== input.sourceCommit) throw new Error('GitHub proposal artifact binding mismatch');
+      }
+      if (proposal.planningArtifactId !== undefined) {
+        const plan = this.get<Artifact>('artifacts', proposal.planningArtifactId);
+        if (!plan || plan.projectId !== projectId || plan.taskId !== proposal.taskId || plan.logicalKey !== 'issue_proposals' || proposal.kind !== 'issue.create' || !Number.isSafeInteger(proposal.planningIssueIndex) || proposal.planningIssueIndex! < 0) throw new Error('Invalid issue planning artifact binding');
+      } else if (proposal.planningIssueIndex !== undefined) throw new Error('Missing issue planning artifact binding');
+    } else if (collection === 'tasks') {
       const task = entity as Task;
       assertTaskTransition(task.state, task.state);
       taskReference(task.parentTaskId);
@@ -127,11 +172,16 @@ export class Store {
       taskReference(session.taskId);
       assertSessionTransition(session.state, session.state);
       if (session.connector !== 'codex' || !session.bootId) throw new Error('Invalid connector session');
+      if (session.resumedFrom !== undefined) {
+        if (!session.resumedFrom || session.resumedFrom === session.id) throw new Error('Invalid resumed session reference');
+        sessionReference(session.resumedFrom, session.taskId);
+      }
     } else if (collection === 'decisions') {
       const decision = entity as Decision;
       const approval = this.get<Approval>('approvals', decision.approvalId);
       if (!approval || approval.projectId !== projectId || approval.sessionId !== decision.sessionId || approval.actionDigest !== decision.actionDigest || approval.bootId !== decision.bootId || approval.policySnapshotId !== decision.policySnapshotId) throw new Error('Decision binding mismatch');
       if (decision.resolver !== 'human' || !['approve', 'deny'].includes(decision.decision) || !['intent', 'sent', 'uncertain', 'rejected'].includes(decision.delivery)) throw new Error('Invalid human decision');
+      if (decision.policyChecks !== undefined && (!Array.isArray(decision.policyChecks) || decision.policyChecks.some(result => !result || typeof result.check !== 'string' || !result.check || result.outcome !== 'pass' || typeof result.summary !== 'string' || !result.summary || !Number.isFinite(Date.parse(result.checkedAt))))) throw new Error('Invalid recorded policy checks');
     } else {
       const scoped = entity as Entity & { taskId: string; sessionId?: string | null };
       if (!scoped.taskId) throw new Error('Missing task identity');
@@ -148,8 +198,23 @@ export class Store {
         const observation = entity as Observation;
         taskReference(observation.parentTaskId);
         if (!session || !observation.sourceTurnId) throw new Error('Invalid observation source');
+        if (observation.terminalStatus !== undefined && observation.terminalStatus !== null && (typeof observation.terminalStatus !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/i.test(observation.terminalStatus))) throw new Error('Invalid observation terminal status');
       }
       if (collection === 'artifacts' && (!Number.isSafeInteger((entity as Artifact).version) || (entity as Artifact).version < 1)) throw new Error('Invalid artifact version');
+      if (collection === 'artifacts' && (entity as Artifact).readableByTaskIds !== undefined) {
+        const allowed = (entity as Artifact).readableByTaskIds;
+        if (!Array.isArray(allowed) || new Set(allowed).size !== allowed.length || allowed.some(id => typeof id !== 'string' || !id)) throw new Error('Invalid artifact access scope');
+        for (const id of allowed) taskReference(id);
+      }
+      if (collection === 'artifacts' && (entity as Artifact).inputArtifacts !== undefined) {
+        const inputs = (entity as Artifact).inputArtifacts;
+        if (!Array.isArray(inputs) || new Set(inputs.map(input => input.id)).size !== inputs.length) throw new Error('Invalid artifact input provenance');
+        for (const input of inputs) {
+          const artifact = this.get<Artifact>('artifacts', input.id);
+          if (!artifact || artifact.id === entity.id || artifact.projectId !== projectId || artifact.logicalKey !== input.logicalKey || artifact.version !== input.version || artifact.sourceCommit !== input.sourceCommit) throw new Error('Artifact input binding mismatch');
+        }
+      }
+      if (collection === 'artifacts' && (entity as Artifact).sourceSessionId !== undefined) sessionReference((entity as Artifact).sourceSessionId, scoped.taskId);
     }
   }
   #sourceKey(collection: Collection, entity: Entity): string | undefined {
@@ -158,6 +223,8 @@ export class Store {
     if (collection === 'decisions') return canonicalize([record.approvalId]);
     if (collection === 'observations') return canonicalize([record.sessionId, record.sourceTurnId]);
     if (collection === 'artifacts') return canonicalize([record.projectId, record.logicalKey, record.version]);
+    if (collection === 'skills') return canonicalize([record.skillId ?? record.name, record.version]);
+    if (collection === 'personas') return canonicalize([record.role, record.version]);
     if (collection === 'events' && record.sourceId !== null) return canonicalize([record.sessionId, record.sourceId, record.type]);
     return;
   }
@@ -199,16 +266,17 @@ export class Store {
       const changesRecord = changes as Record<string, unknown>;
       const identity = ['id', 'projectId', 'createdAt', 'revision', 'schemaVersion'];
       if (collection === 'tasks') identity.push('parentTaskId');
-      if (collection === 'sessions') identity.push('taskId', 'connector', 'bootId');
+      if (collection === 'sessions') identity.push('taskId', 'connector', 'bootId', 'resumedFrom');
       for (const key of identity) if (Object.hasOwn(changesRecord, key) && changesRecord[key] !== oldRecord[key]) throw new Error(`Immutable identity field: ${key}`);
       if (collection === 'sessions') {
-        for (const key of ['contextDigest', 'personaVersionId', 'artifactInputs', 'bindingRef']) {
+        for (const key of ['contextDigest', 'personaVersionId', 'artifactInputs', 'skillVersionIds', 'bindingRef']) {
           const initialized = oldRecord[key] !== undefined && (key !== 'bindingRef' || oldRecord[key] !== null);
           if (Object.hasOwn(changesRecord, key) && initialized && canonicalize(changesRecord[key]) !== canonicalize(oldRecord[key])) throw new Error(`Immutable session context field: ${key}`);
         }
       }
-      if (['approvals', 'decisions', 'events', 'observations', 'personas', 'artifacts'].includes(collection)) {
-        const mutable = new Set(['updatedAt', 'revision', ...(collection === 'approvals' ? ['state', 'reason'] : collection === 'decisions' ? ['delivery'] : collection === 'observations' ? ['state'] : collection === 'artifacts' ? ['status'] : [])]);
+      if (['approvals', 'decisions', 'events', 'observations', 'personas', 'artifacts', 'skills', 'connections', 'githubProposals'].includes(collection)) {
+        const mutable = new Set(['updatedAt', 'revision', ...(collection === 'approvals' ? ['state', 'reason'] : collection === 'decisions' ? ['delivery'] : collection === 'observations' ? ['state'] : collection === 'artifacts' ? ['status'] : collection === 'connections' ? ['state','capabilities','owners'] : collection === 'githubProposals' ? ['state','reason','externalUrl'] : [])]);
+        if (collection === 'githubProposals') for (const key of ['signature','verificationKey','keyId','resolver','decision','decidedAt','reconciliationMarker']) if (oldRecord[key] === undefined) mutable.add(key);
         for (const key of Object.keys(changesRecord)) if (!mutable.has(key) && canonicalize(changesRecord[key]) !== canonicalize(oldRecord[key])) throw new Error(`Immutable ${collection} field: ${key}`);
       }
       const next = { ...current, ...changes, id: current.id, revision: current.revision + 1, updatedAt: new Date().toISOString() } as T;
@@ -220,6 +288,7 @@ export class Store {
       if (collection === 'tasks') assertTaskTransition((current as Task).state, (next as Task).state);
       if (collection === 'sessions') assertSessionTransition((current as Session).state, (next as Session).state);
       if (collection === 'approvals') assertApprovalTransition((current as Approval).state, (next as Approval).state);
+      if (collection === 'githubProposals') assertGitHubProposalTransition((current as GitHubProposal).state, (next as GitHubProposal).state);
       if (collection === 'decisions') {
         const prior = (current as Decision).delivery;
         const after = (next as Decision).delivery;

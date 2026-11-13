@@ -10,6 +10,9 @@ import { dirname, extname, resolve, sep } from "node:path";
 import { z, ZodError } from "zod";
 import {
   freshEntity,
+  validatePersonaMetadata,
+  validateSkillVersion,
+  type SkillVersion,
   type Artifact,
   type Observation,
   type Persona,
@@ -19,6 +22,7 @@ import {
 import { Runtime } from "./runtime.js";
 import { AppError, OperatorSessions, requireCondition } from "./security.js";
 import { handleMcp } from "./mcp.js";
+import { proposalInput, repositoryName } from "./github-contracts.js";
 
 export interface AppOptions {
   runtime: Runtime;
@@ -34,6 +38,8 @@ const projectSchema = z
     name: z.string().trim().min(1).max(100),
     workspace: z.string().min(1).max(4096),
     objective: text,
+    createWorkspace: z.boolean().optional(),
+    initializeGit: z.boolean().optional(),
     githubRepo: z
       .string()
       .regex(/^[\w.-]+\/[\w.-]+$/)
@@ -147,11 +153,18 @@ export async function createApplication(
             message: error.issues
               .map((i) => `${i.path.join(".") || "request"}: ${i.message}`)
               .join("; "),
+            fieldErrors: Object.fromEntries(
+              error.issues.map((i) => [
+                i.path.join(".") || "request",
+                i.message,
+              ]),
+            ),
+            retryable: false,
           },
         });
       else if (error instanceof AppError)
         json(res, error.status, {
-          error: { code: error.code, message: error.message },
+          error: { code: error.code, message: error.message, ...error.details },
         });
       else
         json(res, 409, {
@@ -200,7 +213,7 @@ export async function createApplication(
     }
     if (url.pathname.startsWith("/api/")) {
       const mutating = req.method !== "GET" && req.method !== "HEAD";
-      const operator = operators.authenticate(req, origin, mutating);
+      const operator = operators.authenticate(req, origin, mutating, res);
       if (req.method === "GET" && url.pathname === "/api/session") {
         json(res, 200, { csrfToken: operator.csrfToken });
         return;
@@ -213,6 +226,21 @@ export async function createApplication(
         );
         return;
       }
+      if (req.method === "GET" && url.pathname === "/api/profile/github") {
+        json(res, 200, runtime.github.profile());
+        return;
+      }
+      const readParts = url.pathname.split("/").filter(Boolean);
+      if (
+        req.method === "GET" &&
+        readParts[1] === "projects" &&
+        readParts[3] === "github" &&
+        readParts[4] === "proposals" &&
+        readParts.length === 5
+      ) {
+        json(res, 200, { proposals: runtime.github.list(readParts[2]) });
+        return;
+      }
       requireCondition(
         req.method === "POST",
         "method_not_allowed",
@@ -220,6 +248,58 @@ export async function createApplication(
         405,
       );
       const body = await readBody(req);
+      if (url.pathname === "/api/profile/github/connect") {
+        z.object({ provider: z.literal("gh-cli") })
+          .strict()
+          .parse(body);
+        json(res, 200, await runtime.github.connect());
+        return;
+      }
+      if (url.pathname === "/api/profile/github/disconnect") {
+        z.object({}).strict().parse(body);
+        json(res, 200, runtime.github.disconnect());
+        return;
+      }
+      if (url.pathname === "/api/skills") {
+        const input = z
+          .object({
+            sourceId: idSchema.optional(),
+            name: short,
+            procedure: text,
+            requiredCapabilities: z.array(idSchema).max(8),
+            inputSchema: z.record(z.string(), z.unknown()).optional(),
+            outputSchema: z.record(z.string(), z.unknown()).optional(),
+          })
+          .strict()
+          .parse(body);
+        const source = input.sourceId
+          ? runtime.must<SkillVersion>("skills", input.sourceId)
+          : undefined;
+        const skillId =
+          source?.skillId ?? source?.name ?? freshEntity("skill").id;
+        const skill: SkillVersion = {
+          ...freshEntity("skl"),
+          skillId,
+          name: input.name,
+          procedure: input.procedure,
+          version:
+            Math.max(
+              0,
+              ...runtime.store
+                .list<SkillVersion>("skills")
+                .filter((s) => (s.skillId ?? s.name) === skillId)
+                .map((s) => s.version),
+            ) + 1,
+          requiredCapabilities: input.requiredCapabilities,
+          inputSchema: input.inputSchema ??
+            source?.inputSchema ?? { type: "object" },
+          outputSchema: input.outputSchema ??
+            source?.outputSchema ?? { type: "object" },
+        };
+        validateSkillVersion(skill);
+        json(res, 201, runtime.store.create("skills", skill, "human"));
+        return;
+      }
       if (url.pathname === "/api/projects") {
         json(res, 201, await runtime.createProject(projectSchema.parse(body)));
         return;
@@ -230,6 +310,17 @@ export async function createApplication(
             sourceId: idSchema,
             name: z.string().trim().min(1).max(100),
             instructions: text,
+            mandate: short.optional(),
+            requiredArtifacts: z
+              .array(z.string().regex(/^[a-z][a-z0-9_]{0,79}$/))
+              .max(20)
+              .optional(),
+            toolScope: z.array(idSchema).max(8).optional(),
+            dataScope: z.array(short).max(20).optional(),
+            escalationRules: z.array(short).max(20).optional(),
+            expectedOutputs: z.array(short).max(20).optional(),
+            completionContract: text.optional(),
+            skillVersionIds: z.array(idSchema).max(20).optional(),
           })
           .strict()
           .parse(body);
@@ -242,8 +333,33 @@ export async function createApplication(
           ...freshEntity("per"),
           name: input.name,
           instructions: input.instructions,
+          mandate: input.mandate ?? source.mandate,
+          requiredArtifacts:
+            input.requiredArtifacts ?? source.requiredArtifacts,
+          toolScope: input.toolScope ??
+            source.toolScope ?? [...runtime.coordinationTools()],
+          authorityTemplate: {
+            mode: "human-only",
+            capabilities: input.toolScope ??
+              source.toolScope ?? [...runtime.coordinationTools()],
+          },
+          dataScope: input.dataScope ??
+            source.dataScope ?? ["Assigned project only"],
+          escalationRules: input.escalationRules ??
+            source.escalationRules ?? [
+              "Escalate missing authority or required context to the parent or human",
+            ],
+          expectedOutputs: input.expectedOutputs ??
+            source.expectedOutputs ?? ["Verified outputs with provenance"],
+          completionContract:
+            input.completionContract ??
+            source.completionContract ??
+            "Completion is a claim requiring human acceptance.",
+          skillVersionIds:
+            input.skillVersionIds ?? source.skillVersionIds ?? [],
           version: Math.max(...versions.map((v) => v.version)) + 1,
         };
+        try { validatePersonaMetadata(persona); } catch (error) { throw new AppError("persona_metadata_invalid", (error as Error).message, 400, { operation: "Save persona" }); }
         json(
           res,
           201,
@@ -269,6 +385,78 @@ export async function createApplication(
       );
       const projectId = parts[2];
       runtime.must("projects", projectId);
+      if (parts[3] === "github") {
+        if (parts[4] === "link" && parts.length === 5) {
+          const input = z
+            .object({ repository: repositoryName })
+            .strict()
+            .parse(body);
+          json(
+            res,
+            200,
+            await runtime.github.link(projectId, input.repository),
+          );
+          return;
+        }
+        if (parts[4] === "proposals" && parts.length === 5) {
+          json(
+            res,
+            201,
+            await runtime.github.propose(projectId, proposalInput.parse(body)),
+          );
+          return;
+        }
+        if (parts[4] === "proposals" && parts[5] === "from-artifact" && parts.length === 6) {
+          const input = z.object({ artifactId: z.string().min(1), index: z.number().int().nonnegative() }).strict().parse(body);
+          json(res, 201, await runtime.github.proposeFromArtifact(projectId, input.artifactId, input.index));
+          return;
+        }
+        if (
+          parts[4] === "proposals" &&
+          parts.length === 7 &&
+          parts[6] === "resolve"
+        ) {
+          const input = z
+            .object({
+              decision: z.enum(["approve", "deny"]),
+              expectedRevision: z.number().int().positive(),
+              actionDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            })
+            .strict()
+            .parse(body);
+          json(
+            res,
+            200,
+            await runtime.github.resolve(projectId, parts[5], input),
+          );
+          return;
+        }
+        if (
+          parts[4] === "proposals" &&
+          parts.length === 7 &&
+          parts[6] === "reconcile"
+        ) {
+          z.object({}).strict().parse(body);
+          json(res, 200, await runtime.github.reconcile(projectId, parts[5]));
+          return;
+        }
+        if (
+          parts[4] === "references" &&
+          parts[5] === "resolve" &&
+          parts.length === 6
+        ) {
+          const input = z
+            .object({ reference: z.string().url().max(2000) })
+            .strict()
+            .parse(body);
+          json(
+            res,
+            200,
+            await runtime.github.reference(projectId, input.reference),
+          );
+          return;
+        }
+      }
       if (parts[3] === "tasks" && parts.length === 4) {
         json(res, 201, runtime.createTask(projectId, taskSchema.parse(body)));
         return;
@@ -285,6 +473,31 @@ export async function createApplication(
               task.id,
               startSchema.parse(body).model,
             ),
+          );
+          return;
+        }
+        if (operation === "resume") {
+          json(
+            res,
+            201,
+            await runtime.startTask(
+              projectId,
+              task.id,
+              startSchema.parse(body).model,
+              "resume",
+            ),
+          );
+          return;
+        }
+        if (operation === "history") {
+          const input = z
+            .object({ includeText: z.boolean().default(false) })
+            .strict()
+            .parse(body);
+          json(
+            res,
+            200,
+            await runtime.hydrateHistory(projectId, task.id, input.includeText),
           );
           return;
         }
@@ -559,6 +772,7 @@ export async function createApplication(
     });
   }
   const expiry = setInterval(() => {
+    runtime.refreshActiveCapabilities();
     void runtime.governance.expire();
   }, 1000);
   expiry.unref();
