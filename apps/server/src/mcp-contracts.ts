@@ -40,6 +40,7 @@ const observation = z
     parentTaskId: id.nullable(),
     sessionId: id,
     sourceTurnId: id,
+    terminalStatus: z.string().nullable().optional(),
     classification: z.enum([
       "awaiting_input",
       "decision_proposal",
@@ -66,6 +67,9 @@ const artifact = z
     externalRef: z.string().nullable(),
     sourceCommit: z.string().nullable(),
     expiresAt: z.string().datetime().nullable(),
+    readableByTaskIds: z.array(id).optional(),
+    inputArtifacts: z.array(z.object({ id, logicalKey: z.string(), version: z.number().int().positive(), sourceCommit: z.string().nullable() }).strict()).optional(),
+    sourceSessionId: id.optional(),
   })
   .strict();
 

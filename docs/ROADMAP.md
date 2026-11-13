@@ -1,6 +1,6 @@
 # Delivery roadmap
 
-Planning baseline: 2026-11-13. Product name: AGCP; repository/working name: Agentdash. M0 is complete for the pinned experimental local build. M1 has a verified local foundation. M2–M5 have partial integrated implementations; resume/history recovery, detailed inspection, conversational edge cases, and complete persona/artifact/GitHub flows remain open. M6–M7 remain unstarted. GitHub owns exact issue completion state. Milestones are ordered by evidence and dependencies, without invented delivery dates.
+Planning baseline: 2026-11-13. Product name: AGCP; repository/working name: Agentdash. M0 is complete for the pinned experimental local build. M1–M5 have integrated implementations, including verified stopped-session resume/history, retained worktree reuse, detailed inspection, bounded parent continuation, rich persona/skill versions and profile-level GitHub proposals. Structured nonterminal waiting coverage and controlled live GitHub writes remain open. M6 release acceptance/packaging and M7 remain incomplete. GitHub owns exact issue completion state. Milestones are ordered by evidence and dependencies, without invented delivery dates. See the [current increment evidence](research/recovery-profile-increment.md).
 
 ## Release boundary
 
@@ -21,7 +21,7 @@ The vision review selected **Operations desk** as the default layout. M3 include
 | M6 — MVP release readiness | Acceptance suite, security/recovery review, packaging and onboarding | All eight PRD acceptance criteria demonstrated; limitations documented; no unresolved release-blocking security defect | M5 |
 | M7 — Delegation and portability | Scoped parent decision authority, recommendation bundles, redacted export/import | Delegation cannot bypass human-only policy; atomic nodes survive bundles; export excludes credentials and source by default | M6 |
 
-M5 connects GitHub once at profile level, then creates or links a separate repository per project when connected. Account connection and repository binding are separate; local-only operation remains supported. This workflow is planned under AGCP-022/023, not implemented by the current manual reference field. See [ADR 0004](decisions/0004-profile-github-and-project-repositories.md).
+M5 connects GitHub once at profile level, then creates or links a separate repository per project when connected. Account connection and repository binding are separate; local-only operation remains supported. The experimental OS-keyring-backed CLI provider and exact-proposal flow are implemented; controlled live remote-write acceptance remains under AGCP-023/024. See [ADR 0004](decisions/0004-profile-github-and-project-repositories.md) and [ADR 0006](decisions/0006-github-provider-and-exact-proposals.md).
 
 ## First work queue
 

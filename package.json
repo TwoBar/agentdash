@@ -14,7 +14,7 @@
     "start": "node dist/apps/server/src/index.js",
     "typecheck": "tsc --noEmit",
     "build": "vite build --config apps/web/vite.config.ts && tsc -p tsconfig.server.json",
-    "test": "tsx --test --test-concurrency=1 packages/*/src/*.test.ts apps/server/src/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 packages/*/src/*.test.ts apps/server/src/*.test.ts apps/web/src/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build && python3 scripts/check_docs.py",
     "spike:approvals": "node scripts/spikes/native-approval.mjs --live",
     "spike:events": "node scripts/spikes/session-events.mjs --live"

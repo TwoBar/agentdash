@@ -126,7 +126,8 @@ export class Governance {
           "This approval does not belong to the project.",
           404,
         );
-        if (this.validateContext) await this.validateContext(scopedApproval);
+        if (decisionType === "approve" && this.validateContext)
+          await this.validateContext(scopedApproval);
         this.store.transaction(() => {
           approval = this.store.get<Approval>("approvals", member.approvalId);
           requireCondition(
@@ -207,6 +208,47 @@ export class Governance {
             expiresAt: approval.expiresAt,
             keyId: this.keyId,
             verificationKey: this.verificationKey,
+            policyChecks: [
+              [
+                "project_scope",
+                "The approval and original session belong to the selected project and task.",
+              ],
+              [
+                "pending_revision",
+                "The displayed revision is current and the action remains pending.",
+              ],
+              [
+                "exact_action",
+                "The live command and directory match the immutable reviewed digest.",
+              ],
+              [
+                "original_process",
+                "The original current-boot native callback and waiting session remain owned.",
+              ],
+              [
+                "human_authority",
+                "The authenticated operator is the resolver under human-only-v1.",
+              ],
+              [
+                "context_inputs",
+                decisionType === "approve"
+                  ? "Required pinned artifact inputs were revalidated before consumption."
+                  : "Deny grants no execution; artifact freshness cannot prevent refusing an action.",
+              ],
+              [
+                "expiry",
+                "Both wall-clock and monotonic deadlines remain valid.",
+              ],
+              [
+                "one_shot",
+                "This decision consumes one pending revision before a single native delivery attempt.",
+              ],
+            ].map(([check, summary]) => ({
+              check,
+              summary,
+              outcome: "pass" as const,
+              checkedAt: new Date(this.now()).toISOString(),
+            })),
             delivery: "intent",
           };
           const signed: Decision = {

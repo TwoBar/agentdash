@@ -1,0 +1,17 @@
+{
+  "pendingHoldMs": 2003,
+  "liveOwnerResumeRejected": true,
+  "foreignScopeRejected": true,
+  "previousCallbackRejected": true,
+  "freshNativeApprovalRequired": true,
+  "stableHistoricalAliases": true,
+  "formerEffect": false,
+  "freshEffect": true,
+  "historyGapNotices": 2,
+  "defaultHistoryTextExcluded": true,
+  "cliVersion": "0.163.0-alpha.11.1",
+  "resultPassed": true,
+  "historyOriginSessionCount": 2,
+  "interruptedHistoryTurnCount": 1,
+  "completedHistoryTurnCount": 1
+}

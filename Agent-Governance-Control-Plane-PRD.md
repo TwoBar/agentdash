@@ -2,7 +2,7 @@
 
 ## Product requirements document
 
-**Status:** Draft v0.3 — incorporates the 2026-11-13 workspace and GitHub connection reviews  
+**Status:** Draft v0.4 — incorporates the 2026-11-13 recovery and implemented GitHub boundary  
 **Scope:** A personal, local-first development control plane with Codex as the first supported execution connector.
 
 ## 1. Product summary
@@ -52,7 +52,7 @@ An individual developer/product builder using multiple coding-agent sessions on 
 
 1. User optionally connects GitHub once in profile settings. That account connection is reusable across projects; repository bindings belong to individual projects.
 2. User creates a project. If GitHub is connected, project setup offers creation of a repository for that project, with the permitted owner/organization, name, and visibility reviewed before the governed write. Linking an existing permitted repository is also supported. Without GitHub, the project remains local.
-3. AGCP creates or links the approved repository when requested, creates a root project node, and starts the project orchestrator persona in Codex.
+3. AGCP creates the local project and root node. Workspace-folder creation and local Git initialization are separate explicit options; an existing workspace is the default. Remote repository creation requires its own reviewed proposal. The user then explicitly starts the orchestrator in Codex.
 4. User chats with the orchestrator to establish vision, constraints, and roadmap.
 5. The orchestrator proposes a work tree and requests specialist agents as needed.
 
@@ -101,13 +101,15 @@ Personas follow declared context protocols. For example, a codebase analyst publ
 - Versioned persona templates define mandate, role instructions, authority, tool/data scope, escalation policy, required inputs, expected outputs, and completion/reporting contract.
 - Skills are reusable procedures attached to personas; the same skill may be used by several personas.
 - MVP persona library: project orchestrator, architect, senior implementer, junior implementer, codebase analyst, security reviewer, test engineer, release reviewer, and research agent.
-- User can clone and edit personas, with version history used by each session.
+- User can clone and edit personas and skill procedures. Each session pins immutable versions; later edits apply to future sessions.
+- Required input resolution and tool scope come from the pinned persona and skill capabilities; model claims cannot expand either.
 
 ### Artifact registry
 
 - AGCP owns a project-level registry for artifacts and their versions, status, provenance, freshness, access scope, and external references.
 - Agents resolve logical inputs such as `current_roadmap` and `codebase_map` through the registry, rather than fixed repository paths.
 - Registry supports references to GitHub files, issues, pull requests, commits, and AGCP-native documents.
+- Issue-planning output records the exact approved roadmap and codebase-map versions actually resolved by its originating session. A human reviews the draft artifact, then separately reviews each remote-write proposal; changed or revoked inputs block publication.
 
 ### Approval governance
 
@@ -125,8 +127,9 @@ Personas follow declared context protocols. For example, a codebase analyst publ
 - Connect/disconnect GitHub at profile level; project creation reuses the authorized connection without asking for credentials per project.
 - Each project owns its repository binding. A profile connection is not a global repository selection or blanket approval for agent writes.
 - Create or link repositories in MVP if GitHub authorization is configured.
+- The experimental provider explicitly connects a verified OS-keyring-backed GitHub CLI account. No tokens enter project records or agent context; disconnect revokes application access without signing out the CLI. See [ADR 0006](docs/decisions/0006-github-provider-and-exact-proposals.md).
 - Local Git availability and GitHub account authorization are separate; local-only projects work without a GitHub connection. See [ADR 0004](docs/decisions/0004-profile-github-and-project-repositories.md).
-- Surface and govern selected GitHub side effects: repository creation, issue creation, pull-request creation, merge, collaborator or permissions changes, and releases.
+- MVP supports exact human-reviewed repository and issue creation. Pull-request creation, merge, collaborator or permissions changes, and releases remain unavailable until their own implementation and evidence gates.
 - Link project tree nodes and artifacts to GitHub issues, PRs, commits, and files.
 
 ## 9. Trust, safety, and audit requirements
@@ -137,6 +140,8 @@ Personas follow declared context protocols. For example, a codebase analyst publ
 - An approval response may authorize only the exact pending request and one permitted decision type.
 - Agents cannot self-grant roles, expand their tool scope, change parentage, or create unregistered sub-agents.
 - Raw prompts, reasoning, source code, and secrets remain local by default; remote synchronization is opt-in and selectively scoped.
+- Recovery creates a fresh scoped session only after verified former ownership has stopped. Historical events never restore approval authority or accept completion; uncertain delivery is inspected rather than automatically retried.
+- Operator authentication refreshes during valid use. Only the service may renew agent leases for a confirmed live owned process, subject to an absolute lifetime; agents cannot renew their own authority.
 
 ## 10. Success metrics
 

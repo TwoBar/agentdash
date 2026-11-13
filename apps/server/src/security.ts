@@ -1,11 +1,17 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { performance } from "node:perf_hooks";
 
 export class AppError extends Error {
   constructor(
     readonly code: string,
     message: string,
     readonly status = 400,
+    readonly details: {
+      retryable?: boolean;
+      fieldErrors?: Record<string, string>;
+      operation?: string;
+    } = {},
   ) {
     super(message);
   }
@@ -66,6 +72,7 @@ export class OperatorSessions {
     req: IncomingMessage,
     origin: string,
     mutation: boolean,
+    res?: ServerResponse,
   ): Operator {
     const cookie = req.headers.cookie
       ?.split(";")
@@ -109,6 +116,11 @@ export class OperatorSessions {
       );
     }
     session.expiresAt = this.now() + 30 * 60_000;
+    if (res && cookie)
+      res.setHeader(
+        "Set-Cookie",
+        `agcp_operator=${cookie}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=1800`,
+      );
     return session;
   }
 }
@@ -119,10 +131,14 @@ export interface CapabilityPrincipal {
   bootId: string;
 }
 export class Capabilities {
-  #tokens = new Map<string, CapabilityPrincipal & { expiresAt: number }>();
+  #tokens = new Map<
+    string,
+    CapabilityPrincipal & { expiresAt: number; hardExpiresAt: number; deadline: number; hardDeadline: number }
+  >();
   constructor(
     readonly bootId: string,
     readonly now: () => number = Date.now,
+    readonly monotonic: () => number = () => performance.now(),
   ) {}
   issue(principal: Omit<CapabilityPrincipal, "bootId">): string {
     const token = randomBytes(32).toString("base64url");
@@ -130,6 +146,9 @@ export class Capabilities {
       ...principal,
       bootId: this.bootId,
       expiresAt: this.now() + 15 * 60_000,
+      hardExpiresAt: this.now() + 8 * 60 * 60_000,
+      deadline: this.monotonic() + 15 * 60_000,
+      hardDeadline: this.monotonic() + 8 * 60 * 60_000,
     });
     return token;
   }
@@ -139,7 +158,7 @@ export class Capabilities {
     requireCondition(
       principal &&
         principal.bootId === this.bootId &&
-        principal.expiresAt > this.now(),
+        principal.expiresAt > this.now() && principal.deadline > this.monotonic() && principal.hardDeadline > this.monotonic(),
       "invalid_capability",
       "The session capability is missing, expired or revoked.",
       401,
@@ -150,6 +169,27 @@ export class Capabilities {
       sessionId: principal.sessionId,
       bootId: principal.bootId,
     };
+  }
+  /** Service-only renewal for an independently verified owned process; never exposed as an MCP/HTTP tool. */
+  renewSession(sessionId: string, allowExpired = false): boolean {
+    let renewed = false;
+    for (const principal of this.#tokens.values()) {
+      if (
+        principal.sessionId !== sessionId ||
+        principal.bootId !== this.bootId ||
+        principal.hardExpiresAt <= this.now() ||
+        principal.hardDeadline <= this.monotonic() ||
+        (!allowExpired && (principal.expiresAt <= this.now() || principal.deadline <= this.monotonic()))
+      )
+        continue;
+      principal.expiresAt = Math.min(
+        principal.hardExpiresAt,
+        this.now() + 15 * 60_000,
+      );
+      principal.deadline = Math.min(principal.hardDeadline, this.monotonic() + 15 * 60_000);
+      renewed = true;
+    }
+    return renewed;
   }
   revokeSession(sessionId: string): void {
     for (const [key, p] of this.#tokens)

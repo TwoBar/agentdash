@@ -191,6 +191,22 @@ test('terminal turn clears outstanding native callback even without a separate r
   } finally { await f.close(); }
 });
 
+test('minimal retention preserves a reviewed command only for this boot after resolution', async () => {
+  const f = runtimeFixture();
+  try {
+    const project = await f.runtime.createProject({ name: 'Review evidence', workspace: f.workspace, objective: 'Synthetic' });
+    const session = await f.runtime.startTask(project.id, project.rootTaskId);
+    f.approval(session);
+    const approval = f.runtime.store.list<Approval>('approvals')[0];
+    const result = await f.runtime.governance.resolve(project.id, [{ approvalId: approval.id, actionDigest: approval.actionDigest, expectedRevision: approval.revision }], 'approve');
+    assert.equal(result[0].ok, true);
+    assert.equal((f.runtime.state(project.id).approvals as Approval[]).find(a => a.id === approval.id)?.command, 'printf synthetic');
+    assert.equal(f.runtime.must<Approval>('approvals', approval.id).command.includes('printf synthetic'), false);
+    await f.restart();
+    assert.equal((f.runtime.state(project.id).approvals as Approval[]).find(a => a.id === approval.id)?.command.includes('printf synthetic'), false);
+  } finally { await f.close(); }
+});
+
 test('late old-process events cannot revive disconnected task state or mutate a replacement session task', async () => {
   const f = runtimeFixture();
   try {
@@ -213,7 +229,7 @@ test('restart invalidates a still-paused session and failed provisioning cleans 
     const project = await f.runtime.createProject({ name: 'Paused recovery', workspace: f.workspace, objective: 'Synthetic' }); const session = await f.runtime.startTask(project.id, project.rootTaskId); f.approval(session);
     await f.restart(); assert.equal(f.closeCount, 1);
     assert.equal(f.runtime.must<Session>('sessions', session.id).state, 'disconnected'); assert.equal(f.runtime.store.list<Approval>('approvals')[0].state, 'disconnected');
-    f.setFailStart(); await assert.rejects(f.runtime.startTask(project.id, project.rootTaskId), /Synthetic provisioning failure/);
+    f.setFailStart(); await assert.rejects(f.runtime.startTask(project.id, project.rootTaskId), error => (error as any).code === "codex_start_failed" && !(error as Error).message.includes("Synthetic provisioning failure"));
     const attempted = f.starts[1]; assert.ok(f.terminated.includes(attempted.sessionId));
     assert.throws(() => f.runtime.capabilities.authenticate(`Bearer ${attempted.environment!.AGCP_SESSION_CAPABILITY}`));
     assert.equal(f.runtime.must<Session>('sessions', attempted.sessionId).state, 'failed');

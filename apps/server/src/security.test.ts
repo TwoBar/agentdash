@@ -94,3 +94,21 @@ test('ordinary text redaction removes common credential forms and bounds retaine
   for (const secret of ['abc123', 'synthetic-value', 'unsafe', 'sk-abcdefghijklmnopqrst', 'ghp_abcdefghijklmnopqrst']) assert.equal(output.includes(secret), false);
   assert.ok(redact('x'.repeat(40_000)).length <= 30_000);
 });
+
+test('successful API authentication renews the browser cookie as well as server idle expiry', () => {
+  let now = 1_000;
+  const sessions = new OperatorSessions(() => now);
+  const initial = new Map<string, string>();
+  sessions.establish({ setHeader: (key: string, value: string) => initial.set(key, value) } as any);
+  const cookie = initial.get('Set-Cookie')!.split(';')[0];
+  now += 29 * 60_000;
+  const refreshed = new Map<string, string>();
+  sessions.authenticate({ headers: { cookie } } as any, 'http://127.0.0.1:4317', false,
+    { setHeader: (key: string, value: string) => refreshed.set(key, value) } as any);
+  assert.equal(refreshed.get('Set-Cookie')!.split(';')[0], cookie);
+  assert.match(refreshed.get('Set-Cookie')!, /HttpOnly; SameSite=Strict; Path=\/api; Max-Age=1800/);
+  now += 29 * 60_000;
+  assert.doesNotThrow(() => sessions.authenticate({ headers: { cookie } } as any, 'http://127.0.0.1:4317', false));
+  now += 30 * 60_000;
+  assert.throws(() => sessions.authenticate({ headers: { cookie } } as any, 'http://127.0.0.1:4317', false), /establish an operator session/);
+});

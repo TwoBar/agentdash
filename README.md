@@ -13,7 +13,7 @@ npm ci
 npm run dev
 ```
 
-Open [Agentdash](http://127.0.0.1:4317). Create a project using an existing local directory, then launch its orchestrator explicitly. Merely opening the app does not launch a model or modify a project. Codex must be signed in through its normal supported CLI authentication.
+Open [Agentdash](http://127.0.0.1:4317). Create a project using an existing local directory, or explicitly select folder creation and Git initialization. `~/` paths are supported. Git initialization creates an empty baseline without staging existing files; it refuses a preexisting staged index. Launch the orchestrator explicitly. Merely opening the app does not launch a model. Codex must be signed in through its normal supported CLI authentication.
 
 The connector accepts the tested **Codex CLI 0.163.0-alpha.11.1**. Other versions appear unavailable until their protocol behavior is verified; the UI remains usable for local project organization. Initial development host: macOS; Linux CI exercises portable code.
 
@@ -35,7 +35,10 @@ Set `AGENTDASH_PORT` to use a different local port. `AGENTDASH_DATA_DIR` may sel
 - Approve/Deny on notification cards; counted group approval with member exclusion, frozen IDs/digests/revisions and individual outcomes.
 - An event-anchored Activity / Changes / Context / Decision path inspector; raw reasoning is excluded.
 - Automatic advisory turn observations and parent inbox routing without requiring the child to call an MCP reporting tool. Bounded parent review turns never authorize native actions.
-- Nine versioned personas, cloning, draft/approved/stale artifacts, and required input/freshness checks.
+- Nine complete versioned personas, editable metadata, reusable versioned skill procedures, draft/approved/stale artifacts, and required input/freshness/access checks.
+- Explicit stopped-session resume into a fresh scoped Session, separate nonauthoritative history hydration, and validated reuse of existing child worktrees without discarding edits.
+- Profile-level GitHub connection through a verified OS-keyring-backed GitHub CLI account, distinct repository bindings per project, read-only engineering references, and exact human-reviewed repository/issue proposals.
+- Issue-planning artifacts preserve the exact roadmap and codebase-map versions actually resolved by the originating session; approval and write dispatch revalidate their context.
 - SQLite migrations, revision checks, source deduplication and a verifiable hash-linked audit ledger.
 
 ## Boundaries
@@ -46,15 +49,17 @@ Internal AGCP coordination tools have a narrow explicit native tool allow list; 
 
 Run one service per data directory; an exclusive server.lock prevents overlapping boots from rewriting each other’s live state. A clean shutdown removes it. After a crash, confirm the recorded process has stopped before removing a stale lock. For a consistent metadata backup, stop the service cleanly and copy its private data directory to a protected location. Restoring a copy preserves historical records; the next boot invalidates old live sessions and approvals. Codex history and original source repositories have separate backup requirements.
 
-Private signing keys live only in memory for one service boot. Restart invalidates former pending approvals and live sessions; it never replays an old native response. Delivery and execution are distinct; uncertain delivery requires inspection, not an automatic retry. Capabilities expire after 15 minutes; long-session rotation and recovery are release work.
+Private signing keys live only in memory for one service boot. Restart invalidates former pending approvals and live sessions; it never replays an old native response. Delivery and execution are distinct; uncertain delivery requires inspection, not an automatic retry. The operator cookie refreshes during authenticated use. Agent capabilities have 15-minute leases, renewed only by the service for a confirmed live owned process, with an absolute eight-hour limit. Idle-expired sessions can receive an operator-initiated new turn within that limit; agents cannot renew their own authority.
+
+Use Resume owned session after a confirmed stopped session, or start fresh. Resume verifies stored adapter ownership and creates a new application session and capability; it never restores an old approval callback. Load history defaults to metadata; text requires an explicit choice. History gaps remain visible and historical completion claims cannot accept tasks. Graceful service restart has native evidence; abrupt crash/host reboot and prolonged recovery soak remain release gates.
 
 Governance metadata stays outside source repositories. Default retention keeps session text in memory and persists minimal event metadata. Explicit local-content retention stores redacted messages/output in a **plaintext local database**, excludes raw reasoning, does not erase old content when turned off, and resets to minimal on restart. Redaction catches common credential patterns, not every possible secret. Codex independently retains its own local session history.
 
 The loopback service uses an HttpOnly SameSite cookie, exact Host/Origin checks and CSRF tokens. This is a single-user local boundary, not isolation from a malicious program running as the same OS user or a privileged host administrator. Worktrees isolate source edits, not the operating system.
 
-GitHub currently supports repository references; credentialed repository/issue writes, OS-backed persistent keys, encrypted content archives, supported-version expansion, prolonged recovery tests and desktop packaging remain planned. The experimental Node SQLite driver and runtime/embedded SQLite patch currency need release review. No open-source license has been selected; private package metadata is UNLICENSED and distribution is blocked on the owner's choice.
+OS-backed persistent signing keys, encrypted content archives, supported-version expansion, prolonged recovery tests and desktop packaging remain planned. The experimental Node SQLite driver and runtime/embedded SQLite patch currency need release review. No open-source license has been selected; private package metadata is UNLICENSED and distribution is blocked on the owner's choice.
 
-The planned GitHub workflow is a connection in **profile settings**, reused across projects. Each project creates its own repository or links an existing one when connected; local-only setup also works. Profile connection and repository creation are **not implemented yet**. See [ADR 0004](docs/decisions/0004-profile-github-and-project-repositories.md).
+Connect GitHub explicitly in **profile settings**, then create or link each project's repository. The current provider requires `gh` signed in to github.com using its OS keyring; environment tokens and plaintext credential storage are refused. Connecting stores only account/capability metadata, does not sign out `gh` on disconnect, and grants no agent write authority. Review owner/name/visibility or exact issue content before approving. An uncertain result supports read-only reconciliation and is never automatically resent. Administration, releases, merges and PR writes are unavailable. Live authenticated reference reads passed; remote creation has fixture/browser evidence and still requires a designated live-write acceptance target. See [ADR 0004](docs/decisions/0004-profile-github-and-project-repositories.md) and [ADR 0006](docs/decisions/0006-github-provider-and-exact-proposals.md).
 
 ## Verify
 
@@ -70,9 +75,11 @@ npm run spike:events
 npx tsx scripts/spikes/native-approval-connector.ts --live
 npx tsx scripts/spikes/native-approval-application.ts --live
 npx tsx scripts/spikes/native-approval-group.ts --live
+npx tsx packages/codex/src/recovery.native.ts --live
+npx tsx scripts/spikes/recovery-application.ts --live --restart --recovery-only
 ```
 
-See the [first-build verification and remaining work](docs/research/first-local-build.md), [native evidence](docs/research/native-approval-feasibility.md) and [event coverage](docs/research/session-event-coverage.md) for exact measured behavior and gaps. An interrupted tool can be absent from recovered native history; locally observed evidence remains in the event ledger.
+See the [current verification and remaining work](docs/research/recovery-profile-increment.md), [first-build checkpoint](docs/research/first-local-build.md), [native evidence](docs/research/native-approval-feasibility.md) and [event coverage](docs/research/session-event-coverage.md) for exact measured behavior and gaps. An interrupted tool can be absent from recovered native history; locally observed evidence remains in the event ledger.
 
 ## Project documents
 

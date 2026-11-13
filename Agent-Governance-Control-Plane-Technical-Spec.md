@@ -2,7 +2,7 @@
 
 ## Technical specification — Codex-first MVP
 
-**Status:** Draft v0.3 — incorporates the 2026-11-13 workspace and GitHub connection reviews  
+**Status:** Draft v0.4 — incorporates the 2026-11-13 recovery and implemented GitHub boundary  
 **Architecture principle:** AGCP is a local-first control plane. Codex is the first execution harness. A connector adapter boundary permits future harness support without changing governance semantics.
 
 ## 1. System boundaries
@@ -84,14 +84,14 @@ The initial MCP server exposes narrow, scoped tools to each session:
 |---|---|
 | `get_task_context` | Retrieve assigned objective, parent summary, and approved context references |
 | `resolve_artifact` | Resolve logical artifact keys to the current permitted version |
-| `register_artifact` | Publish an artifact with provenance and requested freshness/status |
-| `request_subagent` | Propose a child role, objective, required skills, and authority request |
+| `register_artifact` | Publish a draft with server-derived session/task provenance; human approval remains separate |
+| `request_subagent` | Request a registered child role/objective under server-validated limits |
 | `get_child_status` | Read limited status of registered children |
+| `reply_to_child` | Continue an exact registered child session, optionally binding its source observation |
 | `report_status` | Report progress, blockers, and completion against structured state |
-| `request_decision` | Ask for a governed decision not otherwise represented by a native harness checkpoint |
-| `link_github_artifact` | Attach permitted GitHub issue/PR/commit references to a task or artifact |
+| `request_decision` | Record an advisory decision request; grants no native authorization |
 
-The MCP server never trusts a caller-supplied parent or authority claim. It derives identity and scope from the session capability token.
+The MCP server never trusts a caller-supplied parent or authority claim. It derives identity and scope from the session capability token and enforces the pinned persona's tool scope. GitHub reference linking and write review currently use the operator API; an agent `link_github_artifact` tool is a future extension, not an implemented capability.
 
 ## 6. Codex connector and approval bridge
 
@@ -106,7 +106,12 @@ getSessionState(session) -> state
 subscribe(session, handler) -> subscription
 submitNativeDecision(pendingApproval, signedDecision) -> result
 terminateSession(session) -> result
+resumeSession(scoped stopped binding, fresh context) -> new SessionBinding + history
+getHistory(session, explicit text option) -> historical entries + explicit gaps
+isSessionAlive(session) -> confirmed owned-process liveness
 ```
+
+Resume verifies adapter-private project/task/workspace/version/process ownership and creates a fresh application Session and capability. Former callbacks remain invalid. History hydration uses a separate idempotent, nonauthoritative path and cannot emit live completion/approval effects. Confirmed stopped ownership is required; unknown/live former processes are refused without killing recorded PIDs. Verified child worktrees are reused without resetting edits. See [ADR 0005](docs/decisions/0005-owned-session-recovery.md).
 
 The exact implementation must use only Codex-supported session and approval interfaces. If Codex cannot expose a stoppable native approval at a requested action, AGCP labels that capability as unavailable rather than claiming enforcement.
 
@@ -180,21 +185,25 @@ The Operations desk inbox also permits Approve and Deny directly on notification
 
 ## 10. Artifact registry and context protocols
 
-Artifacts are AGCP-native records with optional content or external references. A logical key can have many versions; resolution returns the latest approved, non-stale version that the caller may read.
+Artifacts are AGCP-native records with optional content or external references. A logical key can have many versions; resolution considers the newest published version and returns it only when approved, readable and current. A stale/revoked/expired newest published version cannot silently fall back to an older version; an unpublished draft does not supersede approved inputs. Session compilation pins exact versions and source-commit evidence. Existing pins are not silently replaced by later publications, but revoked access, staleness, expiry and changed source still block use.
 
 Example protocol for `issue_planner`:
 
 ```text
 required inputs: current_roadmap, codebase_map
-preconditions: both approved; codebase_map derived from current default branch within defined freshness window
+preconditions: both approved/readable/unexpired; source commit matches the task worktree HEAD
+read receipts: originating scoped session actually resolves both logical keys
 output: issue_proposals
-side effect: GitHub issue creation only after required-input validation and governed approval
+provenance: immutable exact input references and originating session, derived by the service
+side effect: human approves draft artifact, prepares an indexed exact proposal, then approves that write
+revalidation: current planning artifact, exact source inputs and repository/account checked before dispatch
 ```
 
 ## 11. Security model
 
 - Local service binds to loopback by default; inter-process traffic uses authenticated local channels.
-- Session capability tokens are short-lived, scoped, and revocable.
+- Session capability tokens are short-lived, scoped, and revocable. Fifteen-minute leases may be renewed only internally for a confirmed live owned process, with wall/monotonic expiry and an absolute eight-hour limit. There is no agent renewal tool. Idle-expired leases require an authenticated operator/server new turn.
+- Operator cookies refresh during valid authenticated use. Browser bootstrap can recover safe reads after expiry; state-changing requests are never silently replayed.
 - Secrets live in OS-backed secure storage where available; database holds references only.
 - Sensitive prompt/content retention is configurable per project and default-minimal.
 - The event ledger is append-only at the application layer, hash-linked, and exportable for audit.
@@ -202,9 +211,9 @@ side effect: GitHub issue creation only after required-input validation and gove
 
 ### Profile connection and project repository boundary
 
-GitHub authorization belongs to the local operator profile and can be reused by multiple projects. Each project stores its own repository identity and connection reference; credentials stay in secure storage and are never copied into project records, source, session context or agent capabilities. These are target contracts; the experimental build currently stores only a manual repository reference.
+GitHub authorization belongs to the local operator profile and can be reused by multiple projects. Each project stores its own repository identity and connection reference; credentials stay in secure storage and are never copied into project records, source, session context or agent capabilities. The experimental implementation uses an explicit verified OS-keyring-backed GitHub CLI profile connection. Inherited environment-token and plaintext fallback are refused. Write transport retrieves only the specifically connected keyring account token into transient provider memory, verifies its `/user` identity and uses the same token for a fixed-host HTTPS request, without disk/environment/argument/log/agent copies. Repository bindings and stored provider metadata contain no credential.
 
-When a connected profile creates a project, setup offers repository creation for that project or linking an existing permitted repository. Creation binds the reviewed account/owner/name/visibility to an exact human-approved proposal. A profile connection alone cannot grant action approval or access to every authorized repository. Validate current connection identity, target permissions and proposal bindings before each external write; revocation or account mismatch fails closed while local governance stays usable. Local Git workspace support is independent of GitHub authorization. Authentication transport remains the open decision listed below. See [ADR 0004](docs/decisions/0004-profile-github-and-project-repositories.md).
+When a connected profile creates a project, setup offers repository creation for that project or linking an existing permitted repository. Creation binds the reviewed account/owner/name/visibility to an exact human-approved proposal. A profile connection alone cannot grant action approval or access to every authorized repository. Validate current connection identity, target permissions and proposal bindings before each external write; revocation or account mismatch fails closed while local governance stays usable. Local Git workspace support is independent of GitHub authorization. The signed proposal freezes exact payload, input references and optional planning-artifact/item identity. Consume one dispatch intent before a remote attempt. Interrupted or ambiguous completion remains uncertain; bounded marker/content reconciliation is read-only and never resends. See [ADR 0004](docs/decisions/0004-profile-github-and-project-repositories.md) and [ADR 0006](docs/decisions/0006-github-provider-and-exact-proposals.md).
 
 ## 12. Local persistence and portability
 
@@ -257,4 +266,4 @@ Export produces a portable project-governance archive with redaction options. So
 - Whether early agent chat is proxied through AGCP or uses a deep link/session embed into Codex.
 - Formal policy language: declarative rules first, programmable policy later.
 - Event-ledger integrity design and encryption-key recovery model.
-- GitHub OAuth versus GitHub App authorization for personal MVP.
+- Packaged GitHub OAuth/App alternatives to the explicit local CLI provider; controlled live-write acceptance remains required.
