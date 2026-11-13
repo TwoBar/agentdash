@@ -1,0 +1,84 @@
+{
+  "kind": "sanitized-live-application-observations",
+  "date": "2026-11-13",
+  "components": [
+    "HTTP operator boundary",
+    "session-scoped HTTP MCP",
+    "SQLite audit store",
+    "signed one-action governance",
+    "native CodexConnector"
+  ],
+  "cliVersion": "0.163.0-alpha.11.1",
+  "registeredChild": {
+    "requestSubagentActualToolCallSucceeded": true,
+    "parentAndSessionBindingsMatched": true,
+    "actualChildContextCallSucceeded": true,
+    "isolatedCommittedWorktree": true,
+    "exactlyOneChild": true,
+    "automaticObservation": "awaiting_input",
+    "observationRoutedToOriginalParent": true,
+    "taskAcceptedByAgent": false,
+    "noNativeActionAuthorized": true
+  },
+  "result": "passed",
+  "holdMs": 2003,
+  "pendingEffects": {
+    "accept": false,
+    "deny": false
+  },
+  "cases": [
+    {
+      "branch": "accept",
+      "approvalState": "approved",
+      "signatureValid": true,
+      "delivery": "sent",
+      "replayRejected": true,
+      "sentinelAfterDecision": true,
+      "taskState": "review"
+    },
+    {
+      "branch": "deny",
+      "approvalState": "denied",
+      "signatureValid": true,
+      "delivery": "sent",
+      "replayRejected": true,
+      "sentinelAfterDecision": false,
+      "taskState": "blocked"
+    }
+  ],
+  "mcpContextCalls": [
+    {
+      "branch": "deny",
+      "ok": true,
+      "identityBound": true
+    },
+    {
+      "branch": "accept",
+      "ok": true,
+      "identityBound": true
+    },
+    {
+      "branch": "spawn",
+      "ok": true,
+      "identityBound": true
+    },
+    {
+      "branch": "spawn-child",
+      "ok": true,
+      "identityBound": true
+    }
+  ],
+  "coordinationCalls": [
+    {
+      "tool": "request_subagent",
+      "ok": true,
+      "childRegistered": true
+    }
+  ],
+  "audit": {
+    "valid": true,
+    "events": 140
+  },
+  "minimalRetentionAllEventTextNull": true,
+  "note": "Real HTTP operator authentication/CSRF, session bearer MCP, signing/audit and native approval. Only exact synthetic invocation results retained. Pipe delivery sent is separate from observed execution."
+}

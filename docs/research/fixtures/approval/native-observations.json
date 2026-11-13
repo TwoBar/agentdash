@@ -1,0 +1,123 @@
+{
+  "kind": "sanitized-live-observations",
+  "date": "2026-11-13",
+  "cliVersion": "codex-cli 0.163.0-alpha.11.1",
+  "transport": "stdio JSON-RPC, v2 methods",
+  "scratchRetained": false,
+  "observations": {
+    "concurrentAcceptDeny": {
+      "request": {
+        "method": "item/commandExecution/requestApproval",
+        "requestIdType": "number",
+        "kind": "command",
+        "nativeCorrelationFields": [
+          "request.id",
+          "threadId",
+          "turnId",
+          "itemId"
+        ],
+        "hasStartedAtMs": true,
+        "environmentId": "local",
+        "command": "/bin/zsh -lc 'touch sentinel-accept'",
+        "cwd": "<scratch>",
+        "availableDecisionKinds": [
+          "accept",
+          "acceptWithExecpolicyAmendment",
+          "cancel"
+        ],
+        "hasProposedPolicyAmendment": true
+      },
+      "simultaneousPendingRequests": 2,
+      "holdMs": 2001,
+      "before": {
+        "accept": false,
+        "deny": false
+      },
+      "pending": {
+        "accept": false,
+        "deny": false
+      },
+      "afterAcceptBeforeDeny": {
+        "accept": true,
+        "deny": false
+      },
+      "after": {
+        "accept": true,
+        "deny": false
+      },
+      "unknownResponseIdReleasedNeither": true,
+      "replayOfAcceptDidNotReleaseOther": true,
+      "distinctRequestThreadAndItemIds": true,
+      "acceptedTurnStatus": "completed",
+      "deniedTurnStatus": "completed",
+      "commandItemStatuses": [
+        {
+          "branch": "accept",
+          "status": "completed"
+        },
+        {
+          "branch": "deny",
+          "status": "declined"
+        }
+      ]
+    },
+    "expiry": {
+      "nativeAutomaticExpiryProven": false,
+      "boundedPendingMs": 2002,
+      "sameSessionFreshApprovalAfterAccept": true,
+      "clientExpiryAction": "cancel",
+      "sentinelAfter": false,
+      "turnStatus": "interrupted",
+      "note": "Local bounded expiry simulation; no native TTL is asserted."
+    },
+    "stdioDisconnect": {
+      "pendingMs": 2003,
+      "stdinEof": true,
+      "serverExited": true,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "sentinelAfter": false
+    },
+    "processRestart": {
+      "pendingMs": 2002,
+      "killedSignal": "SIGKILL",
+      "sentinelAfterKillAndResume": false,
+      "sameThreadResumed": true,
+      "nativeApprovalReissuedCount": 0,
+      "hydratedTurnStatuses": [
+        "interrupted"
+      ],
+      "observationAfterResumeMs": 2000,
+      "staleDecisionDispatched": false,
+      "note": "Old callbacks are invalid after connector generation loss; never route a stale numeric request ID into a restarted process."
+    }
+  },
+  "model": "gpt-6.1-sol",
+  "configuration": {
+    "approvalPolicy": "on-request",
+    "approvalsReviewer": "user",
+    "sandbox": "read-only",
+    "experimentalApi": false
+  },
+  "nativeMethodNamesObserved": [
+    "account/rateLimits/updated",
+    "account/updated",
+    "deprecationNotice",
+    "item/agentMessage/delta",
+    "item/commandExecution/requestApproval",
+    "item/completed",
+    "item/started",
+    "mcpServer/startupStatus/updated",
+    "remoteControl/status/changed",
+    "serverRequest/resolved",
+    "thread/goal/cleared",
+    "thread/started",
+    "thread/status/changed",
+    "thread/tokenUsage/updated",
+    "turn/completed",
+    "turn/started"
+  ],
+  "result": "passed"
+}

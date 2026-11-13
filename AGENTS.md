@@ -4,7 +4,7 @@ Read README.md, both root specification documents, docs/ROADMAP.md, and the issu
 
 ## Current phase
 
-This repository is in planning / pre-implementation. Start with M0 feasibility and architecture work. Do not describe a planned capability as implemented or a mocked approval as native enforcement. The application stack is unresolved until ADR 0002 is completed with evidence.
+M0 feasibility and ADR 0002 are complete for the experimental local build. The repository now has a Node/TypeScript service, React Operations desk, SQLite store and owned Codex connector. Follow the linked issue and evidence gates; do not describe a planned capability as implemented or a protocol double as native enforcement. The tested native scope is command approvals on the pinned CLI version.
 
 ## Invariants
 
@@ -20,6 +20,6 @@ This repository is in planning / pre-implementation. Start with M0 feasibility a
 
 Use the linked issue's scope, dependencies, and acceptance criteria. Record material architecture decisions in docs/decisions/. Keep the PRD and technical spec aligned when changing requirements; the existing v0.1 documents are the source baseline.
 
-Run `python3 scripts/check_docs.py` for documentation or planning changes. Once application checks exist, run focused tests for changed behavior and the checks required by CI. Security-sensitive state transitions need negative-case evidence, including cross-project access, replay, and disconnect behavior where applicable.
+Run `python3 scripts/check_docs.py` for documentation or planning changes. Run `npm run check` for application changes; focused checks may be used during iteration. Security-sensitive state transitions need negative-case evidence, including cross-project access, replay, and disconnect behavior where applicable.
 
 Report what changed, how it was verified, and remaining limits. Do not add runtime commands or dependencies to documentation before they exist.

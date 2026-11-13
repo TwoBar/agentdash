@@ -1,0 +1,26 @@
+{
+  "kind": "sanitized-live-root-artifact-observations",
+  "date": "2026-11-13",
+  "cliVersion": "0.163.0-alpha.11.1",
+  "result": "passed",
+  "actualToolCalls": [
+    "get_task_context",
+    "register_artifact"
+  ],
+  "artifact": {
+    "logicalKey": "synthetic_stub",
+    "status": "draft",
+    "version": 1,
+    "taskAndProjectBoundToAuthenticatedRoot": true,
+    "sourceCommitMatchesScratchHead": true,
+    "syntheticContentMatchesRequest": true
+  },
+  "taskState": "review",
+  "selfApprovalGranted": false,
+  "nativeActionsAuthorized": 0,
+  "audit": {
+    "valid": true,
+    "events": 34
+  },
+  "note": "Artifact creation was observed through actual native MCP tools/call plus persisted scoped provenance, not an agent completion claim. Raw requests, context, source paths, IDs, credentials and prompts are omitted."
+}

@@ -1,0 +1,41 @@
+{
+  "kind": "sanitized-live-adapter-observations",
+  "date": "2026-11-13",
+  "probe": {
+    "available": true,
+    "version": "0.163.0-alpha.11.1",
+    "reason": null
+  },
+  "result": "passed",
+  "holdMs": 2003,
+  "pendingEffects": {
+    "accept": false,
+    "deny": false
+  },
+  "finalEffects": {
+    "accept": true,
+    "deny": false
+  },
+  "crossSessionRejected": true,
+  "digestMismatchRejected": true,
+  "replayRejected": true,
+  "nativeTurnStatuses": [
+    {
+      "branch": "deny",
+      "status": "interrupted"
+    },
+    {
+      "branch": "accept",
+      "status": "completed"
+    }
+  ],
+  "nativeEventTypes": [
+    "session.started",
+    "turn.started",
+    "activity",
+    "approval.requested",
+    "approval.resolved",
+    "turn.completed"
+  ],
+  "scope": "Real CodexConnector with isolated owned processes, explicit default model selection, inherited MCP/plugins disabled, hooks/apps/native child spawning disabled. No raw session or native identifiers retained."
+}

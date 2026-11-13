@@ -1,6 +1,6 @@
 # Project readiness review
 
-Reviewed 2026-11-13 against the supplied PRD v0.1 and technical specification v0.1. This is a planning assessment, not an implementation audit.
+Reviewed 2026-11-13 against the supplied PRD v0.1 and technical specification v0.1. This section preserves the initial planning assessment; see the implementation update below for current evidence.
 
 ## Findings
 
@@ -38,6 +38,12 @@ The research spikes must use supported interfaces, synthetic prompts, and an iso
 
 Each decision needs a short rationale, alternatives, consequences, and linked verification in an ADR. Only the first three research issues need to be ready now; future issues carry dependencies explicitly.
 
-## Ready to start
+## Initial readiness baseline (superseded below)
 
 Repository setup provides Git history, a linked remote, the roadmap, dependency-aware issues and milestones, contributor guidance, and documentation CI. Application development begins with M0. There are no runtime setup commands or application tests to run yet.
+
+## Implementation update — 2026-11-13
+
+M0 native command and event spikes passed on the exact tested CLI, and ADR 0002 now records the accepted experimental runtime. The integrated local build includes a persistent graph, owned sessions, scoped MCP, child worktrees, signed one-shot approvals, grouped human decisions, an inspector, advisory parent inboxes, and initial persona/artifact support. Unit/integration/security checks and native/browser exercises provide evidence; this is not a packaged release or a claim that all MVP criteria and long-running recovery cases are complete.
+
+Read the [README](../README.md) for actual startup/check commands and explicit limitations. GitHub issues track remaining scope. License selection, runtime patch review, long-session capability renewal, encrypted retention/OS credential storage, credentialed GitHub writes, recovery soak tests and distribution remain release work.

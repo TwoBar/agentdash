@@ -1,0 +1,17 @@
+{
+  "kind": "sanitized-live-aggregate",
+  "date": "2026-11-13",
+  "version": "codex-cli 0.163.0-alpha.11.1",
+  "scenario": "implicit configured thread model produced failed turns",
+  "implicitModel": "gpt-5-codex",
+  "turns": 3,
+  "liveErrorNotifications": 3,
+  "liveTerminalStatuses": ["failed", "failed", "failed"],
+  "persistedTerminalStatuses": ["failed", "failed", "failed"],
+  "sameThreadIdAfterRestart": true,
+  "sameTurnIdsAfterRestart": true,
+  "sameItemIdsAfterRestart": true,
+  "missingCompletedItemIds": 0,
+  "serverRequests": 0,
+  "note": "Failure payload text intentionally omitted. No raw events, transcripts, local paths or identifiers retained."
+}
