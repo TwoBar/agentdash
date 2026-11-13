@@ -1,0 +1,45 @@
+{
+  "kind": "sanitized-live-aggregate",
+  "date": "2026-11-13",
+  "version": "codex-cli 0.163.0-alpha.11.1",
+  "transport": "stdio",
+  "experimentalApi": false,
+  "model": "gpt-6.1-sol",
+  "modelSelection": "model/list isDefault",
+  "historyMode": "paginated",
+  "questionObservedWithoutMcp": true,
+  "workStatus": "completed",
+  "interruptStatus": "interrupted",
+  "itemPaginationAvailable": true,
+  "history": {
+    "turns": 3,
+    "statuses": ["completed", "completed", "interrupted"],
+    "items": 8,
+    "liveCompletedItems": 8,
+    "missingCompletedIds": 0,
+    "commandExitCodes": [0, 7],
+    "fileChangeItems": 1
+  },
+  "live": {
+    "methods": {
+      "thread/started": 1,
+      "thread/status/changed": 6,
+      "turn/started": 3,
+      "item/started": 9,
+      "item/completed": 8,
+      "item/agentMessage/delta": 17,
+      "turn/completed": 3,
+      "turn/diff/updated": 3
+    },
+    "itemTypes": {"userMessage": 3, "agentMessage": 2, "commandExecution": 2, "fileChange": 1},
+    "terminalStatuses": {"completed": 2, "interrupted": 1}
+  },
+  "agentDeltasMatchFinal": true,
+  "toolLifecycleOrdered": true,
+  "duplicateCompletedItems": 0,
+  "eventTimestampsPresent": true,
+  "serverRequestMethods": [],
+  "restart": {"sameThreadId": true, "sameTurnIds": true, "sameItemIds": true, "historyTurnStatuses": ["completed", "completed", "interrupted"]},
+  "invalidInterrupt": {"rejected": true, "code": -32600},
+  "scratchRemoved": true
+}

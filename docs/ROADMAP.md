@@ -1,6 +1,6 @@
 # Delivery roadmap
 
-Planning baseline: 2026-11-13. Product name: AGCP; repository/working name: Agentdash. All implementation milestones are **not started**. Milestones are ordered by evidence and dependencies, without invented delivery dates.
+Planning baseline: 2026-11-13. Product name: AGCP; repository/working name: Agentdash. M0 is complete for the pinned experimental local build. M1 has a verified local foundation. M2–M5 have partial integrated implementations; resume/history recovery, detailed inspection, conversational edge cases, and complete persona/artifact/GitHub flows remain open. M6–M7 remain unstarted. GitHub owns exact issue completion state. Milestones are ordered by evidence and dependencies, without invented delivery dates.
 
 ## Release boundary
 
@@ -28,7 +28,7 @@ The vision review selected **Operations desk** as the default layout. M3 include
 3. **AGCP-003:** use those reports to finalize runtime/process architecture, threat boundaries, and licensing direction.
 4. **AGCP-004:** scaffold the application and runtime CI using the resulting decision.
 
-AGCP-001 and AGCP-002 are ready research tasks. AGCP-003 depends on their evidence. This sequence is a work queue, not a claim that feasibility has been demonstrated.
+AGCP-001 and AGCP-002 are ready research tasks. AGCP-003 depends on their evidence. This was the initial queue; the resulting native evidence and accepted runtime decision are linked in ADR 0002. Remaining work is tracked in GitHub.
 
 ## MVP acceptance traceability
 

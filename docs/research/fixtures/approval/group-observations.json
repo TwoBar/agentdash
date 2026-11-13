@@ -1,0 +1,44 @@
+{
+  "kind": "sanitized-live-native-group-observations",
+  "date": "2026-11-13",
+  "cliVersion": "0.163.0-alpha.11.1",
+  "result": "passed",
+  "holdMs": 2002,
+  "sameProject": true,
+  "sameRegisteredParent": true,
+  "rootModelStarted": false,
+  "isolatedWorktrees": 2,
+  "nativePendingMembers": 2,
+  "groupHttpGestures": 1,
+  "effectsBeforeAndPending": [
+    false,
+    false
+  ],
+  "effectsAfter": [
+    true,
+    true
+  ],
+  "members": [
+    {
+      "independentlySigned": true,
+      "signatureValid": true,
+      "delivery": "sent",
+      "approvalState": "approved",
+      "taskState": "review"
+    },
+    {
+      "independentlySigned": true,
+      "signatureValid": true,
+      "delivery": "sent",
+      "approvalState": "approved",
+      "taskState": "review"
+    }
+  ],
+  "distinctDecisionIdsAndSignatures": true,
+  "audit": {
+    "valid": true,
+    "events": 76
+  },
+  "processEnvironment": "Approved runtime variables plus explicit scoped session credentials; unrelated host tokens and NODE_OPTIONS excluded.",
+  "limit": "One frozen gesture produced two separately validated native dispatches. This is not an atomic execution transaction."
+}

@@ -1,0 +1,29 @@
+{
+  "kind": "synthetic-protocol-illustration",
+  "note": "Invented identifiers and path. This file is not live enforcement evidence.",
+  "request": {
+    "id": 0,
+    "method": "item/commandExecution/requestApproval",
+    "params": {
+      "kind": "command",
+      "threadId": "synthetic-thread-a",
+      "turnId": "synthetic-turn-a",
+      "itemId": "synthetic-item-a",
+      "startedAtMs": 1000,
+      "environmentId": "local",
+      "command": "/bin/zsh -lc 'touch sentinel-accept'",
+      "cwd": "/synthetic/scratch",
+      "commandActions": [{ "type": "unknown", "command": "touch sentinel-accept" }],
+      "availableDecisions": ["accept", "cancel"]
+    }
+  },
+  "oneActionAcceptResponse": { "id": 0, "result": { "decision": "accept" } },
+  "oneActionDenyResponse": { "id": 0, "result": { "decision": "cancel" } },
+  "applicationValidationBeforeEitherResponse": [
+    "authenticated human authority",
+    "project, task and original session binding",
+    "connector generation and exact native callback",
+    "immutable canonical action digest",
+    "unexpired, pending, not previously dispatched"
+  ]
+}

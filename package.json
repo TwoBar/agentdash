@@ -1,0 +1,37 @@
+{
+  "name": "agentdash",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "npm@10.9.3",
+  "engines": {
+    "node": ">=22.20.0 <23",
+    "npm": ">=10.9.3 <11"
+  },
+  "scripts": {
+    "dev": "tsx watch apps/server/src/index.ts",
+    "start": "node dist/apps/server/src/index.js",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build --config apps/web/vite.config.ts && tsc -p tsconfig.server.json",
+    "test": "tsx --test --test-concurrency=1 packages/*/src/*.test.ts apps/server/src/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build && python3 scripts/check_docs.py",
+    "spike:approvals": "node scripts/spikes/native-approval.mjs --live",
+    "spike:events": "node scripts/spikes/session-events.mjs --live"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vite": "8.3.8"
+  }
+}
